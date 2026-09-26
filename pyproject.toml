@@ -1,0 +1,76 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "face-recognition-platform"
+version = "0.1.0"
+description = "Greenfield real-time face recognition scaffold"
+requires-python = ">=3.11"
+dependencies = [
+  "cryptography>=45,<47",
+  "fastapi>=0.116,<1",
+  "httpx>=0.28,<1",
+  "onnx>=1.17,<2",
+  "psycopg[binary]>=3.2,<4",
+  "pydantic>=2.11,<3",
+  "python-multipart>=0.0.20,<1",
+  "tzdata>=2025.2; platform_system == 'Windows'",
+  "uvicorn[standard]>=0.35,<1",
+]
+
+[project.optional-dependencies]
+cpu = [
+  "onnxruntime>=1.20,<2",
+]
+dev = [
+  "pytest>=8,<10",
+  "ruff>=0.12,<1",
+  "mypy>=1.18,<2",
+]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+mypy_path = [
+  "apps/control-api/src",
+  "workers/vision-worker/src",
+  "packages/python/face-recognition-domain/src",
+  "packages/python/face-recognition-config/src",
+  "packages/python/face-recognition-contracts/src",
+]
+exclude = ["apps/web", ".tools"]
+
+[tool.setuptools.packages.find]
+where = [
+  "apps/control-api/src",
+  "workers/vision-worker/src",
+  "packages/python/face-recognition-domain/src",
+  "packages/python/face-recognition-config/src",
+  "packages/python/face-recognition-contracts/src",
+]
+include = ["control_api*", "vision_worker*", "fr_domain*", "fr_config*", "fr_contracts*"]
+exclude = ["tests*"]
+namespaces = false
+
+[tool.setuptools]
+include-package-data = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "apps/control-api/tests", "workers/vision-worker/tests"]
+pythonpath = [
+  "apps/control-api/src",
+  "workers/vision-worker/src",
+  "packages/python/face-recognition-domain/src",
+  "packages/python/face-recognition-config/src",
+  "packages/python/face-recognition-contracts/src",
+]
+addopts = "-q"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+exclude = [".tools", ".venv", "build", "dist", "node_modules"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "feature_type": "face_recognition",
+  "name": "Example entrance recognition",
+  "camera_id": "replace-with-camera-id",
+  "enabled": false,
+  "models": {
+    "person_detector": {
+      "model_definition_id": "yolo-person",
+      "model_version": "replace-with-version",
+      "deployment_id": "replace-with-deployment-id"
+    },
+    "face_detector": {
+      "model_definition_id": "scrfd-face",
+      "model_version": "replace-with-version",
+      "deployment_id": "replace-with-deployment-id"
+    },
+    "face_embedder": {
+      "model_definition_id": "adaface",
+      "model_version": "replace-with-version",
+      "deployment_id": "replace-with-deployment-id"
+    }
+  },
+  "roi": {
+    "recognition_area_ids": ["replace-with-roi-id"],
+    "track_anchor": "bottom_center",
+    "face_anchor": "center"
+  },
+  "quality": {
+    "min_face_size_px": 80,
+    "min_detection_confidence": 0.8,
+    "max_abs_yaw_deg": 30,
+    "max_abs_pitch_deg": 25,
+    "max_abs_roll_deg": 25,
+    "blur_threshold": 100,
+    "brightness_min": 40,
+    "brightness_max": 220,
+    "max_occlusion": 0.3,
+    "require_landmarks": true
+  },
+  "recognition": {
+    "identity_collection_id": "default",
+    "top_k": 5,
+    "similarity_threshold": 0.72
+  },
+  "verification": {
+    "strategy": "quality_weighted_vote",
+    "min_good_frames": 3,
+    "max_frames": 8,
+    "timeout_ms": 2000,
+    "similarity_threshold": 0.72,
+    "identity_consistency": 0.75,
+    "min_candidate_margin": 0.05
+  },
+  "timing": {
+    "recognition_interval_ms": 500,
+    "recognition_retry_ms": 5000,
+    "verified_identity_ttl_ms": 10000,
+    "track_cache_ttl_ms": 10000,
+    "unknown_dwell_ms": 3000,
+    "event_cooldown_ms": 30000,
+    "duplicate_suppression_ms": 5000
+  },
+  "schedule": {
+    "timezone": "Asia/Ho_Chi_Minh",
+    "weekly": {
+      "monday": [{ "start": "08:00", "end": "18:00" }]
+    }
+  },
+  "policies": [
+    {
+      "id": "unknown-person",
+      "priority": 100,
+      "enabled": true,
+      "conditions": {
+        "verification_statuses": ["UNKNOWN"],
+        "roi_ids": ["replace-with-roi-id"],
+        "identity_group_ids": [],
+        "minimum_dwell_ms": 3000
+      },
+      "action": {
+        "emit_event": true,
+        "event_type": "UNKNOWN_PERSON",
+        "severity": "high"
+      }
+    }
+  ],
+  "evidence": {
+    "snapshot": true,
+    "video_clip": false,
+    "pre_event_seconds": 5,
+    "post_event_seconds": 5,
+    "overlays": {
+      "person_bbox": true,
+      "face_bbox": true,
+      "roi": true,
+      "identity": true,
+      "similarity": false
+    }
+  }
+}
