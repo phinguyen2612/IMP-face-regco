@@ -27,6 +27,25 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.resetAllMocks(); });
 
+it.each([
+  ['NotFoundError', 'Không tìm thấy thiết bị camera.'],
+  ['NotReadableError', 'Camera đang bị ứng dụng khác sử dụng'],
+])('explains %s without starting an empty backend stream', async (name, message) => {
+  getUserMedia.mockRejectedValue(new DOMException('device unavailable', name));
+  render(<BrowserWebcamLive camera={camera}/>);
+  await userEvent.setup().click(screen.getByRole('button', {name:'Bắt đầu realtime'}));
+  expect((await screen.findByRole('alert')).textContent).toContain(message);
+  expect(api.startBrowserSession).not.toHaveBeenCalled();
+});
+
+it('requests the rear-facing camera when selected on a phone', async () => {
+  render(<BrowserWebcamLive camera={camera}/>);
+  const user = userEvent.setup();
+  await user.selectOptions(screen.getByLabelText('Hướng camera'), 'environment');
+  await user.click(screen.getByRole('button', {name:'Bắt đầu realtime'}));
+  expect(getUserMedia).toHaveBeenCalledWith(expect.objectContaining({video:expect.objectContaining({facingMode:{ideal:'environment'}})}));
+});
+
 it("streams bounded frames and stops the camera/session when requested", async () => {
   const user = userEvent.setup();
   render(<BrowserWebcamLive camera={camera} />);

@@ -148,6 +148,13 @@ class GStreamerCameraSource:
                             "LOCAL_WEBCAM_READ_FAILED",
                             "LOCAL_WEBCAM_OPEN_TIMEOUT",
                             "OPENCV_UNAVAILABLE",
+                            "DROIDCAM_UNREACHABLE",
+                            "DROIDCAM_TIMEOUT",
+                            "DROIDCAM_AUTHENTICATION_FAILED",
+                            "DROIDCAM_INVALID_FRAME",
+                            "DROIDCAM_FRAME_TOO_LARGE",
+                            "DROIDCAM_STREAM_ENDED",
+                            "DROIDCAM_STREAM_ERROR",
                         }
                         else "CAMERA_STREAM_ERROR"
                     )

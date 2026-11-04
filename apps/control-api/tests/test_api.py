@@ -44,6 +44,29 @@ def test_health_does_not_require_external_services() -> None:
     }
 
 
+def test_health_reports_camera_database_failure_instead_of_healthy(monkeypatch) -> None:
+    from psycopg import OperationalError
+
+    camera_service = build_camera_persistence(environment={}).service
+
+    def disconnected():
+        raise OperationalError("database connection lost")
+
+    monkeypatch.setattr(camera_service.repo, "list", disconnected)
+    monkeypatch.setattr(
+        "control_api.main.build_camera_persistence",
+        lambda: CameraPersistence(camera_service, "postgresql"),
+    )
+    client = TestClient(create_app())
+    response = client.get("/health")
+    assert response.status_code == 503
+    assert response.json()["status"] == "unhealthy"
+    assert response.json()["database"] == "unavailable"
+    failure = client.get("/api/v1/cameras")
+    assert failure.status_code == 503
+    assert failure.json() == {"detail": "DATABASE_UNAVAILABLE"}
+
+
 def test_health_reports_postgres_persistence(monkeypatch) -> None:
     memory_persistence = build_camera_persistence({})
     monkeypatch.setattr(

@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import fptLogo from "../../assets/fpt-university-logo.png";
 import { ThemeToggle } from "../../ui/ThemeToggle";
+import {Icon} from '../../ui/Icon';
 
 export function LoginPage({
   onSignIn,
@@ -30,6 +31,7 @@ export function LoginPage({
   }
 
   return <main className="login-page">
+    <aside className="login-context" aria-label="Giới thiệu không gian làm việc"><p className="eyebrow">CAMPUS WORKSPACE</p><h2>Nhận diện rõ ràng.<br/>Điểm danh thuận tiện.</h2><p>Không gian làm việc dành cho quản trị viên, giáo viên và sinh viên.</p><div className="login-capabilities"><div><Icon name="camera"/><span><strong>Giám sát camera</strong><small>Theo dõi nguồn hình và sự kiện</small></span></div><div><Icon name="image"/><span><strong>Tra cứu minh chứng</strong><small>Camera, thời điểm và ảnh trong cùng ngữ cảnh</small></span></div><div><Icon name="check"/><span><strong>Quản lý điểm danh</strong><small>Thông tin theo đúng lớp và vai trò</small></span></div></div><span className="login-context-footer">FPT University · Điểm danh thông minh</span></aside>
     <section className="login-card" aria-labelledby="login-title">
       <div className="login-brand"><img src={fptLogo} alt="Trường Đại học FPT" /><ThemeToggle/></div>
       <p className="eyebrow">KHÔNG GIAN HỌC TẬP</p>

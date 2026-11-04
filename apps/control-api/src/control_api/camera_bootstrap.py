@@ -6,7 +6,7 @@ from control_api.camera_connection import GStreamerCameraConnectionTester
 from control_api.camera_postgres import (
     Connection,
     PostgresCameraRepository,
-    connect_postgres,
+    connect_persistent_postgres,
     initialize_camera_schema,
 )
 from control_api.cameras import (
@@ -24,7 +24,7 @@ class CameraPersistence:
 
 def build_camera_persistence(
     environment: Mapping[str, str] | None = None,
-    connector: Callable[[str], Connection] = connect_postgres,
+    connector: Callable[[str], Connection] = connect_persistent_postgres,
 ) -> CameraPersistence:
     env = os.environ if environment is None else environment
     dsn = env.get("FR_POSTGRES_DSN")

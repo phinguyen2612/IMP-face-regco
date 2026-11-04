@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from hashlib import sha256
 from importlib import import_module
 from pathlib import Path
@@ -60,6 +61,20 @@ class OnnxInferenceSession:
         if provider not in ort.get_available_providers():
             raise OnnxSessionError("PROVIDER_UNAVAILABLE")
         options = ort.SessionOptions()
+        try:
+            threads = int(os.getenv("FR_ORT_INTRA_OP_THREADS", "0"))
+            spinning = os.getenv("FR_ORT_ALLOW_SPINNING", "1")
+            if not 0 <= threads <= 64 or spinning not in {"0", "1"}:
+                raise ValueError
+        except ValueError as error:
+            raise OnnxSessionError("INVALID_CPU_THREAD_CONFIGURATION") from error
+        options.intra_op_num_threads = threads
+        options.inter_op_num_threads = 1
+        options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+        options.add_session_config_entry("session.intra_op.allow_spinning", spinning)
+        options.add_session_config_entry("session.inter_op.allow_spinning", spinning)
+        self.intra_op_threads = threads
+        self.allow_spinning = spinning == "1"
         try:
             self._session = ort.InferenceSession(
                 artifact, sess_options=options, providers=[provider]

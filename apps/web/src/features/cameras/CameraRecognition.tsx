@@ -105,11 +105,7 @@ export function CameraRecognition({camera, roiPolygon, onRoiChange, roiEditing =
       </figure>}
       {!compact && (result.alerts ?? []).length > 0 && <div className="stranger-alert" role="alert">
         Cảnh báo: phát hiện người lạ trong ROI sau {result.unknown_alert_frames ?? 5} frame liên tiếp.
-        {!compact && (result.alerts ?? []).map(alert => <div key={alert.id}>
-          {alert.evidence_status === 'READY' && alert.evidence_key
-            ? <img className="face-event-snapshot" src={`/api/v1/recognition/evidence/${encodeURIComponent(alert.evidence_key)}`} alt="Snapshot cảnh báo người lạ" />
-            : <p>{alert.evidence_status === 'PENDING' ? 'Đang lưu snapshot…' : 'Đã ghi cảnh báo, không lưu được snapshot.'}</p>}
-        </div>)}
+        <p><a href="#alerts">Xem ảnh và báo cáo tại Evidence người lạ →</a></p>
       </div>}
       {(result.faces ?? []).some(face => face.state === 'UNKNOWN') && !(result.alerts ?? []).length &&
         <p role="status">Đang kiểm tra người chưa khớp ảnh đăng ký; chờ đủ {result.unknown_alert_frames ?? 5} frame liên tiếp.</p>}

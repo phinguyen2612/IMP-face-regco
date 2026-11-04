@@ -1,4 +1,4 @@
-param([switch]$WithWorker)
+param([switch]$WithWorker = $true)
 
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -31,8 +31,15 @@ if (-not $apiHealth) {
 }
 if (-not $apiHealth) { throw 'The API did not become healthy in 120 seconds. Check its terminal window.' }
 
-if ($WithWorker) { Start-LocalTerminal 'run-worker.ps1' }
-Start-LocalTerminal 'run-web.ps1'
+if ($WithWorker) {
+    $localPython = Join-Path $root '.venv\Scripts\python.exe'
+    $existingWorker = Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -like "*$localPython*" -and $_.CommandLine -like '*-m vision_worker.main*' }
+    if (-not $existingWorker) { Start-LocalTerminal 'run-worker.ps1' }
+}
+$webReady = $false
+try { $webReady = (Invoke-WebRequest -Uri 'http://127.0.0.1:5173' -UseBasicParsing -TimeoutSec 2).StatusCode -eq 200 } catch { }
+if (-not $webReady) { Start-LocalTerminal 'run-web.ps1' }
 Start-Process 'http://127.0.0.1:5173'
 Write-Host 'API: http://127.0.0.1:8000/health'
 Write-Host 'Web: http://127.0.0.1:5173'

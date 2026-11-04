@@ -5,7 +5,7 @@ export const workspacePages = {
  overview:{label:"Tổng quan",group:"VẬN HÀNH",description:"Theo dõi nguồn hình và những sự kiện cần chú ý tại cơ sở.",roles:["ADMIN"]},
  monitoring:{label:"Giám sát trực tiếp",group:"VẬN HÀNH",description:"Quan sát camera và kết quả nhận diện trên cùng một khung hình.",roles:["ADMIN"]},
  livewall:{label:"Livewall",group:"V\u1eacN H\u00c0NH",description:"Quan s\u00e1t nhi\u1ec1u camera c\u00f9ng l\u00fac tr\u00ean m\u1ed9t m\u00e0n h\u00ecnh.",roles:["ADMIN"]},
- alerts:{label:"Cảnh báo",group:"VẬN HÀNH",description:"Kiểm tra người chưa khớp ảnh đăng ký và ảnh minh chứng từ camera.",roles:["ADMIN"]},
+ alerts:{label:"Evidence người lạ",group:"VẬN HÀNH",description:"Tra cứu ảnh minh chứng và xuất báo cáo cảnh báo người lạ từ camera.",roles:["ADMIN"]},
  cameras:{label:"Camera",group:"QUẢN LÝ",description:"Thiết lập nguồn hình, vùng giám sát và chính sách nhận diện cho từng camera.",roles:["ADMIN"]},
  models:{label:"Mô hình nhận diện",group:"THIẾT LẬP",description:"Quản lý model và cấu hình nhận diện.",roles:["ADMIN"]},
  people:{label:"Hồ sơ khuôn mặt",group:"QUẢN LÝ",description:"Quản lý hồ sơ và ảnh đăng ký khuôn mặt.",roles:["ADMIN"]},

@@ -19,3 +19,4 @@ artifacts/
 .pytest-m3-audit-*/
 .pytest-*/
 .runtime/
+.codex-remote-attachments/

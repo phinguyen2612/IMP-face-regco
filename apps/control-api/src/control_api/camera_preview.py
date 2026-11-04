@@ -162,7 +162,7 @@ def create_camera_preview_router(
             not camera.enabled
             or camera.lifecycle != "ACTIVE"
             or camera.revision != revision
-            or camera.source_type not in {"local_webcam", "rtsp", "webcam"}
+            or camera.source_type not in {"local_webcam", "rtsp", "webcam", "droidcam"}
         ):
             raise HTTPException(409, "PREVIEW_CAMERA_NOT_ACTIVE")
 

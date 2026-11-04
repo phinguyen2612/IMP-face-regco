@@ -1,5 +1,5 @@
 import json
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from importlib import import_module
 from threading import RLock
@@ -52,6 +52,9 @@ CREATE TABLE IF NOT EXISTS camera_monitoring_settings (
     evidence_retention_days integer NOT NULL DEFAULT 30
       CHECK(evidence_retention_days BETWEEN 1 AND 3650)
 );
+ALTER TABLE camera_source_configs DROP CONSTRAINT IF EXISTS camera_source_configs_source_type_check;
+ALTER TABLE camera_source_configs ADD CONSTRAINT camera_source_configs_source_type_check
+ CHECK (source_type IN ('rtsp','local_webcam','webcam','droidcam'));
 ALTER TABLE camera_monitoring_settings ADD COLUMN IF NOT EXISTS unknown_alert_frames
  integer NOT NULL DEFAULT 5 CHECK(unknown_alert_frames BETWEEN 2 AND 60);
 INSERT INTO camera_source_configs (camera_id,source_type)
@@ -194,3 +197,54 @@ def connect_postgres(dsn: str) -> Connection:
     except ModuleNotFoundError as error:
         raise RuntimeError("psycopg is required for PostgreSQL camera persistence") from error
     return cast(Connection, psycopg.connect(dsn))
+
+
+class PersistentPostgresConnection:
+    """Replace a lost connection at the next operation, never replay a transaction."""
+
+    def __init__(self, connector: Callable[[], Any]) -> None:
+        self._connector = connector
+        self._connection = connector()
+        self._lock = RLock()
+        self._closed = False
+        self._transaction_depth = 0
+
+    def _ready(self) -> Any:
+        with self._lock:
+            if self._closed:
+                raise RuntimeError("POSTGRES_CONNECTION_CLOSED")
+            if self._connection.closed and not self._transaction_depth:
+                self._connection = self._connector()
+            return self._connection
+
+    def cursor(self) -> Any:
+        return self._ready().cursor()
+
+    @contextmanager
+    def transaction(self) -> Iterator[Any]:
+        with self._lock:
+            connection = self._ready()
+            self._transaction_depth += 1
+            try:
+                with connection.transaction() as transaction:
+                    yield transaction
+            finally:
+                self._transaction_depth -= 1
+
+    def commit(self) -> None:
+        # A lost commit has an unknown outcome. Reconnecting here would falsely
+        # report success for a different, empty transaction.
+        self._connection.commit()
+
+    def rollback(self) -> None:
+        if not self._connection.closed:
+            self._connection.rollback()
+
+    def close(self) -> None:
+        with self._lock:
+            self._closed = True
+            self._connection.close()
+
+
+def connect_persistent_postgres(dsn: str) -> Connection:
+    return PersistentPostgresConnection(lambda: connect_postgres(dsn))

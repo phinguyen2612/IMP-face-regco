@@ -113,6 +113,32 @@ def test_cpu_session_and_yolo_adapter_execute_controlled_graph(tmp_path: Path) -
         session.run({"images": tensor})
 
 
+def test_cpu_thread_profile_applies_to_real_session(tmp_path: Path, monkeypatch) -> None:
+    path = tmp_path / "controlled.onnx"
+    checksum = controlled_graph(path)
+    monkeypatch.setenv("FR_ORT_INTRA_OP_THREADS", "4")
+    monkeypatch.setenv("FR_ORT_ALLOW_SPINNING", "0")
+    session = OnnxInferenceSession(path, checksum, manifest())
+    options = session._session.get_session_options()
+    assert options.intra_op_num_threads == 4
+    assert options.inter_op_num_threads == 1
+    assert options.get_session_config_entry("session.intra_op.allow_spinning") == "0"
+    assert options.get_session_config_entry("session.inter_op.allow_spinning") == "0"
+    session.warmup()
+    assert session.provider == "CPUExecutionProvider"
+    session.close()
+
+
+@pytest.mark.parametrize("threads,spinning", [("bad", "0"), ("-1", "0"), ("65", "0"), ("4", "yes")])
+def test_invalid_thread_profile_fails_explicitly(tmp_path: Path, monkeypatch, threads, spinning):
+    path = tmp_path / "controlled.onnx"
+    checksum = controlled_graph(path)
+    monkeypatch.setenv("FR_ORT_INTRA_OP_THREADS", threads)
+    monkeypatch.setenv("FR_ORT_ALLOW_SPINNING", spinning)
+    with pytest.raises(OnnxSessionError, match="INVALID_CPU_THREAD_CONFIGURATION"):
+        OnnxInferenceSession(path, checksum, manifest())
+
+
 def test_invalid_artifact_and_tensor_contract_fail(tmp_path: Path) -> None:
     path = tmp_path / "controlled.onnx"
     checksum = controlled_graph(path)

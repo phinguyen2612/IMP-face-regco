@@ -34,7 +34,7 @@ it('draws face boxes and identity labels on the matching processed frame', async
   expect(screen.queryByAltText('Camera nháº­n diá»‡n Webcam')).toBeNull();
 });
 
-it('shows a snapshot only for a confirmed backend stranger alert', async () => {
+it('links confirmed stranger alerts to the separate evidence report', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => Response.json({state:'READY',preview:'data:image/jpeg;base64,test',unknown_alert_frames:5,alerts:[{id:'alert-1',evidence_status:'READY',evidence_key:'face-alert.jpg'}],faces:[{
     box:[.2,.2,.2,.2],state:'UNKNOWN',full_name:null,student_id:null,person_number:null,similarity:.12
   }]})));
@@ -42,7 +42,8 @@ it('shows a snapshot only for a confirmed backend stranger alert', async () => {
   render(<CameraRecognition camera={camera} />);
   expect((await screen.findByRole('alert')).textContent).toMatch(/C\u1ea3nh b\u00e1o: ph\u00e1t hi\u1ec7n ng\u01b0\u1eddi l\u1ea1 trong ROI/i);
   expect(screen.getByTestId('face-detection-box').textContent).toContain('Người lạ');
-  expect(screen.getByAltText('Snapshot cảnh báo người lạ').getAttribute('src')).toContain('face-alert.jpg');
+  expect(screen.getByRole('link', {name: /Xem ảnh và báo cáo/}).getAttribute('href')).toBe('#alerts');
+  expect(screen.queryByAltText('Snapshot cảnh báo người lạ')).toBeNull();
 });
 
 it('does not alert merely because one face is unknown', async () => {

@@ -9,9 +9,11 @@ from fastapi.exceptions import RequestValidationError
 from fr_config.models import CameraConfig, FaceRecognitionConfig
 from fr_contracts.messages import MessageEnvelope
 from fr_contracts.runtime_status import RuntimeStatus
+from psycopg import InterfaceError, OperationalError
 from pydantic import BaseModel
 from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp, Receive, Scope, Send
+from starlette.websockets import WebSocketDisconnect
 
 from control_api.auth_api import SESSION_COOKIE, create_auth_router
 from control_api.auth_domain import AuthService, Principal
@@ -202,13 +204,13 @@ def create_app(
     event_dsn = os.getenv("FR_POSTGRES_DSN")
     event_storage = None
     if event_dsn:
-        from control_api.camera_postgres import connect_postgres
+        from control_api.camera_postgres import connect_persistent_postgres
 
         event_storage = build_configured_object_storage("MINIO_EVIDENCE_BUCKET", "evidence")
         if event_storage is None:
             raise RuntimeError("MinIO evidence storage is required with FR_POSTGRES_DSN")
         recognition_events = RecognitionEventStore(
-            event_root, connection=connect_postgres(event_dsn), storage=event_storage
+            event_root, connection=connect_persistent_postgres(event_dsn), storage=event_storage
         )
         object_storage_health_checks.append(event_storage)
     else:
@@ -232,10 +234,10 @@ def create_app(
     models = model_registry_service or build_model_registry(model_objects)
     vector_index = vector_index_service
     if vector_index is None and os.getenv("FR_POSTGRES_DSN"):
-        from control_api.camera_postgres import connect_postgres
+        from control_api.camera_postgres import connect_persistent_postgres
 
         vector_index = VectorIndexService.from_postgres(
-            connect_postgres(os.environ["FR_POSTGRES_DSN"]),
+            connect_persistent_postgres(os.environ["FR_POSTGRES_DSN"]),
             Path(os.getenv("FR_VECTOR_INDEX_ROOT", "data/vector-index")),
         )
     app = FastAPI(
@@ -262,6 +264,16 @@ def create_app(
                 connection.close()
 
     app.add_middleware(BrowserAuthBoundary, auth=auth)
+
+    @app.exception_handler(OperationalError)
+    @app.exception_handler(InterfaceError)
+    async def database_unavailable(request: Request, error: Exception) -> JSONResponse:
+        del request, error
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "DATABASE_UNAVAILABLE"},
+            headers={"Retry-After": "3", "Cache-Control": "no-store"},
+        )
 
     api = APIRouter(prefix="/api/v1")
     app.add_middleware(FaceUploadBodyLimit)
@@ -294,6 +306,14 @@ def create_app(
             else "optional",
             "camera_persistence": persistence_mode,
         }
+        if persistence_mode == "postgresql":
+            try:
+                cameras.repo.list()
+            except (OperationalError, InterfaceError):
+                payload["status"] = "unhealthy"
+                payload["database"] = "unavailable"
+                return JSONResponse(status_code=503, content=payload)
+            payload["database"] = "ready"
         try:
             for storage in object_storage_health_checks:
                 storage.health_check()
@@ -416,51 +436,56 @@ def create_app(
     async def websocket_status(
         websocket: WebSocket,
     ) -> None:
-        principal: Principal | None = None
-        if auth is not None:
-            origin = websocket.headers.get("origin")
-            scheme = "https" if websocket.url.scheme in {"wss", "https"} else "http"
-            expected_origin = f"{scheme}://{websocket.url.netloc}"
-            if origin and origin.rstrip("/").lower() == expected_origin.rstrip("/").lower():
-                principal = await asyncio.to_thread(
-                    auth.resolve_session, websocket.cookies.get(SESSION_COOKIE)
-                )
-        if principal is not None and principal.role != "ADMIN":
-            principal = None
-        if principal is None:
-            await websocket.close(code=1008, reason="browser session required")
+        try:
+            principal: Principal | None = None
+            if auth is not None:
+                origin = websocket.headers.get("origin")
+                scheme = "https" if websocket.url.scheme in {"wss", "https"} else "http"
+                expected_origin = f"{scheme}://{websocket.url.netloc}"
+                if origin and origin.rstrip("/").lower() == expected_origin.rstrip("/").lower():
+                    principal = await asyncio.to_thread(
+                        auth.resolve_session, websocket.cookies.get(SESSION_COOKIE)
+                    )
+            if principal is not None and principal.role != "ADMIN":
+                principal = None
+            if principal is None:
+                await websocket.close(code=1008, reason="browser session required")
+                return
+            session_token = websocket.cookies.get(SESSION_COOKIE)
+            await websocket.accept()
+            message = MessageEnvelope(type="system.ready", payload={"mode": "scaffold"})
+            await websocket.send_json(message.model_dump(mode="json"))
+            sent: dict[tuple[str, str], str] = {}
+            last_session_check = monotonic()
+            while True:
+                if monotonic() - last_session_check >= WS_SESSION_RECHECK_SECONDS:
+                    # Revocation is observed within five seconds; keep synchronous DB I/O off-loop.
+                    current = (
+                        await asyncio.to_thread(auth.resolve_session, session_token)
+                        if auth is not None
+                        else None
+                    )
+                    if current is None or current.role != "ADMIN":
+                        await websocket.close(
+                            code=1008, reason="browser session expired or revoked"
+                        )
+                        return
+                    last_session_check = monotonic()
+                for status in status_store.list():
+                    key = (status.worker_id, status.camera_id)
+                    serialized = status.model_dump_json()
+                    if sent.get(key) == serialized:
+                        continue
+                    status_message = MessageEnvelope(
+                        type="runtime.status",
+                        camera_id=status.camera_id,
+                        payload=status.model_dump(mode="json"),
+                    )
+                    await websocket.send_json(status_message.model_dump(mode="json"))
+                    sent[key] = serialized
+                await asyncio.sleep(0.05)
+        except WebSocketDisconnect:
             return
-        session_token = websocket.cookies.get(SESSION_COOKIE)
-        await websocket.accept()
-        message = MessageEnvelope(type="system.ready", payload={"mode": "scaffold"})
-        await websocket.send_json(message.model_dump(mode="json"))
-        sent: dict[tuple[str, str], str] = {}
-        last_session_check = monotonic()
-        while True:
-            if monotonic() - last_session_check >= WS_SESSION_RECHECK_SECONDS:
-                # Revocation is observed within five seconds; keep synchronous DB I/O off-loop.
-                current = (
-                    await asyncio.to_thread(auth.resolve_session, session_token)
-                    if auth is not None
-                    else None
-                )
-                if current is None or current.role != "ADMIN":
-                    await websocket.close(code=1008, reason="browser session expired or revoked")
-                    return
-                last_session_check = monotonic()
-            for status in status_store.list():
-                key = (status.worker_id, status.camera_id)
-                serialized = status.model_dump_json()
-                if sent.get(key) == serialized:
-                    continue
-                status_message = MessageEnvelope(
-                    type="runtime.status",
-                    camera_id=status.camera_id,
-                    payload=status.model_dump(mode="json"),
-                )
-                await websocket.send_json(status_message.model_dump(mode="json"))
-                sent[key] = serialized
-            await asyncio.sleep(0.05)
 
     if auth is None:
 

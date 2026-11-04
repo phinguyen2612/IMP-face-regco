@@ -23,6 +23,26 @@ afterEach(() => {
 });
 
 describe("CameraPanel", () => {
+  it("saves a DroidCam video URL as a draft network source", async () => {
+    const requests: RequestInit[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        requests.push(init);
+        return Response.json({...camera, source_type: "droidcam"}, {status: 201});
+      }
+      return Response.json({items: []});
+    }));
+    const user = userEvent.setup();
+    render(<CameraPanel runtimeStatuses={[]} />);
+    await user.selectOptions(screen.getByLabelText("Nguồn"), "droidcam");
+    await user.type(screen.getByLabelText("Tên camera"), "Điện thoại");
+    await user.type(screen.getByLabelText("Địa chỉ video DroidCam"), "http://192.168.1.20:4747/video");
+    await user.click(screen.getByRole("button", {name: "Lưu camera"}));
+    await waitFor(() => expect(requests).toHaveLength(1));
+    expect(JSON.parse(String(requests[0].body))).toMatchObject({
+      source_type: "droidcam", rtsp_url: "http://192.168.1.20:4747/video", enabled: true,
+    });
+  });
   it('filters cameras by name and preserves unsaved edits when cancellation is declined', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({items:[camera,{...camera,id:'camera-2',name:'Library'}]})));
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);

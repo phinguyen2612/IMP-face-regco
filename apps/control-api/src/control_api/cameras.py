@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
 Codec = Literal["AUTO", "H264", "H265"]
 Lifecycle = Literal["DRAFT", "ACTIVE"]
-CameraSourceType = Literal["rtsp", "local_webcam", "webcam"]
+CameraSourceType = Literal["rtsp", "local_webcam", "webcam", "droidcam"]
 RoiPoint = tuple[float, float]
 
 
@@ -56,10 +56,10 @@ class CameraCreate(BaseModel):
                 self.device_index = 0
         elif self.device_index is not None:
             raise ValueError("device index is only valid for a worker webcam")
-        if self.source_type == "rtsp":
+        if self.source_type in {"rtsp", "droidcam"}:
             if self.rtsp_url is None:
-                raise ValueError("RTSP source requires a URL")
-            validate_rtsp_url(self.rtsp_url.get_secret_value())
+                raise ValueError("Network camera source requires a video URL")
+            validate_camera_url(self.rtsp_url.get_secret_value(), self.source_type)
         else:
             if self.rtsp_url is not None:
                 raise ValueError("webcam source cannot have an RTSP URL")
@@ -90,7 +90,10 @@ class CameraUpdate(BaseModel):
     @model_validator(mode="after")
     def valid_url(self) -> "CameraUpdate":
         if self.rtsp_url is not None:
-            validate_rtsp_url(self.rtsp_url.get_secret_value())
+            # The service validates against the final source type, including patches
+            # that retain the existing source.
+            if self.source_type is not None:
+                validate_camera_url(self.rtsp_url.get_secret_value(), self.source_type)
         return self
 
     @model_validator(mode="after")
@@ -258,7 +261,7 @@ class CameraService:
             str(uuid4()),
             req.name,
             self.protector.protect(uri) if uri else b"",
-            redact_rtsp_url(uri) if uri else "",
+            redact_rtsp_url(uri, req.source_type) if uri else "",
             req.codec,
             req.enabled,
             req.sampling_fps,
@@ -296,7 +299,7 @@ class CameraService:
             if req.rtsp_url is not None
             else (
                 self.protector.reveal(current.protected_rtsp_url)
-                if source_type == "rtsp" and current.source_type == "rtsp"
+                if source_type in {"rtsp", "droidcam"} and current.source_type == source_type
                 else None
             )
         )
@@ -321,7 +324,7 @@ class CameraService:
             else current.unknown_alert_frames,
         )
         protected_url = self.protector.protect(uri) if uri is not None else b""
-        redacted_url = redact_rtsp_url(uri) if uri is not None else ""
+        redacted_url = redact_rtsp_url(uri, source_type) if uri is not None else ""
         updated = CameraRecord(
             id=current.id,
             name=req.name if req.name is not None else current.name,
@@ -357,6 +360,10 @@ class CameraService:
 
     def test_connection(self, camera_id: str) -> CameraConnectionResult:
         rec = self.require(camera_id)
+        if rec.source_type == "droidcam":
+            return CameraConnectionResult(
+                status="BACKEND_UNAVAILABLE", error_category="DROIDCAM_TEST_REQUIRES_WORKER"
+            )
         if rec.source_type != "rtsp":
             return CameraConnectionResult(
                 status="BACKEND_UNAVAILABLE",
@@ -380,7 +387,9 @@ class CameraService:
                 id=r.id,
                 name=r.name,
                 rtsp_url=(
-                    self.protector.reveal(r.protected_rtsp_url) if r.source_type == "rtsp" else None
+                    self.protector.reveal(r.protected_rtsp_url)
+                    if r.source_type in {"rtsp", "droidcam"}
+                    else None
                 ),
                 codec=r.codec,
                 enabled=r.enabled,
@@ -403,7 +412,7 @@ class CameraService:
         return CameraPublic(
             id=r.id,
             name=r.name,
-            rtsp_url=r.redacted_rtsp_url if r.source_type == "rtsp" else None,
+            rtsp_url=r.redacted_rtsp_url if r.source_type in {"rtsp", "droidcam"} else None,
             source_type=r.source_type,
             device_index=r.device_index,
             codec=r.codec,
@@ -425,9 +434,22 @@ def validate_rtsp_url(value: str) -> None:
         raise ValueError("camera URL must be an absolute rtsp or rtsps URL")
 
 
-def redact_rtsp_url(value: str) -> str:
+def validate_camera_url(value: str, source_type: str) -> None:
+    if source_type == "droidcam":
+        p = urlsplit(value)
+        if p.scheme not in {"http", "https"} or not p.hostname:
+            raise ValueError("DroidCam requires an absolute http or https video URL")
+        if p.port is not None and not 1 <= p.port <= 65535:
+            raise ValueError("INVALID_DROIDCAM_PORT")
+        if p.fragment or (p.path.rstrip("/") != "/video" and not p.path.startswith("/video/")):
+            raise ValueError("DroidCam video URL must end with /video or /video/WIDTHxHEIGHT")
+    else:
+        validate_rtsp_url(value)
+
+
+def redact_rtsp_url(value: str, source_type: str = "rtsp") -> str:
     p = urlsplit(value)
-    validate_rtsp_url(value)
+    validate_camera_url(value, source_type)
     host = p.hostname or ""
     if ":" in host:
         host = f"[{host}]"

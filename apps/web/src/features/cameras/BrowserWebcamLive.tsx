@@ -14,6 +14,9 @@ export function BrowserWebcamLive({ camera }: { camera: CameraPublic }) {
   const [phase, setPhase] = useState<"off" | "opening" | "live">("off");
   const [sent, setSent] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [facing, setFacing] = useState<'user' | 'environment'>('user');
+  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
+  const [deviceId, setDeviceId] = useState('');
 
   const release = useCallback(() => {
     generation.current += 1;
@@ -55,10 +58,14 @@ export function BrowserWebcamLive({ camera }: { camera: CameraPublic }) {
       await cleanupPromise.current;
       if (request !== generation.current) return;
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false
+        video: { ...(deviceId ? {deviceId: {exact: deviceId}} : {facingMode: {ideal: facing}}), width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false
       });
       if (request !== generation.current) { stream.getTracks().forEach(track => track.stop()); return; }
       media.current = stream;
+      // Device labels become available after the user grants camera permission.
+      void navigator.mediaDevices.enumerateDevices?.().then(items => {
+        if (request === generation.current) setDevices(items.filter(item => item.kind === 'videoinput'));
+      }).catch(() => {});
       stream.getTracks().forEach(track => track.addEventListener("ended", () => {
         if (request !== generation.current) return;
         stop(); setError("Webcam đã ngắt kết nối. Hãy bắt đầu lại để tiếp tục.");
@@ -91,7 +98,9 @@ export function BrowserWebcamLive({ camera }: { camera: CameraPublic }) {
             if (request !== generation.current) return;
             if (!blob || blob.size > 1024 * 1024) throw new Error("Không tạo được khung hình phù hợp. Hãy bắt đầu lại webcam.");
             const controller = new AbortController(); upload.current = controller;
-            await sendBrowserFrame(camera.id, created.token, blob, controller.signal);
+            const deadline = setTimeout(() => controller.abort(), 8000);
+            try {await sendBrowserFrame(camera.id, created.token, blob, controller.signal);}
+            finally {clearTimeout(deadline);}
             if (request !== generation.current) return;
             upload.current = null;
             setSent(value => value + 1);
@@ -100,7 +109,9 @@ export function BrowserWebcamLive({ camera }: { camera: CameraPublic }) {
         } catch (reason) {
           if (request !== generation.current) return;
           stop();
-          setError(reason instanceof Error ? reason.message : "Kết nối webcam bị gián đoạn. Hãy bắt đầu lại.");
+          setError(reason instanceof DOMException && reason.name === 'AbortError'
+            ? 'Máy chủ không nhận được khung hình trong 8 giây. Kiểm tra kết nối rồi bắt đầu lại.'
+            : reason instanceof Error ? reason.message : "Kết nối webcam bị gián đoạn. Hãy bắt đầu lại.");
         }
       };
       void sendNext();
@@ -109,6 +120,12 @@ export function BrowserWebcamLive({ camera }: { camera: CameraPublic }) {
       stop();
       setError(reason instanceof DOMException && reason.name === "NotAllowedError"
         ? "Chưa được cấp quyền camera. Hãy cho phép webcam trong trình duyệt rồi thử lại."
+        : reason instanceof DOMException && reason.name === 'NotFoundError'
+        ? 'Không tìm thấy thiết bị camera. Kết nối webcam hoặc chọn camera khác rồi thử lại.'
+        : reason instanceof DOMException && reason.name === 'NotReadableError'
+        ? 'Camera đang bị ứng dụng khác sử dụng hoặc không đọc được. Đóng ứng dụng đang dùng camera rồi thử lại.'
+        : reason instanceof DOMException && reason.name === 'OverconstrainedError'
+        ? 'Thiết bị camera đã chọn không còn khả dụng. Chọn lại nguồn camera rồi thử lại.'
         : reason instanceof Error ? reason.message : "Không mở được webcam.");
     }
   }
@@ -117,10 +134,13 @@ export function BrowserWebcamLive({ camera }: { camera: CameraPublic }) {
   return (
     <div className="browser-webcam-live">
       <p>Webcam của trình duyệt · Tối đa {Math.min(10, camera.sampling_fps)} FPS</p>
+      <div className="browser-camera-toolbar">{devices.length > 0 && <label>Thiết bị camera<select disabled={phase !== 'off'} value={deviceId} onChange={event => setDeviceId(event.target.value)}><option value="">Thiết bị mặc định</option>{devices.map((device, index) => <option key={device.deviceId || index} value={device.deviceId}>{device.label || `Camera ${index + 1}`}</option>)}</select></label>}
+      <label>Hướng camera<select disabled={phase !== 'off' || !!deviceId} value={facing} onChange={event => setFacing(event.target.value as 'user' | 'environment')}><option value="user">Camera trước / webcam</option><option value="environment">Camera sau điện thoại</option></select></label></div>
       {!allowed && <p>Kích hoạt camera trước khi bắt đầu realtime.</p>}
       {phase === "off" ? <button type="button" disabled={!allowed} onClick={start}>Bắt đầu realtime</button>
         : <button type="button" onClick={stop}>Dừng realtime</button>}
       {phase === "opening" && <p role="status">Đang kết nối webcam…</p>}
+      {phase === 'off' && allowed && <p className="registry-help">Bấm Bắt đầu realtime rồi cho phép camera để gửi hình. Camera trình duyệt cần localhost hoặc HTTPS; địa chỉ IP mạng nội bộ qua HTTP không hỗ trợ quyền camera.</p>}
       <video ref={video} aria-label={`Webcam realtime ${camera.name}`} autoPlay muted playsInline hidden={phase !== "live"} />
       <p role="status">{phase === "live" ? `Đang truyền · Đã gửi ${sent} khung hình` : "Webcam đã dừng"}</p>
       <p className="registry-help">Xử lý nhận diện phụ thuộc model đã gán. FPS xử lý và trạng thái worker hiển thị phía trên.</p>

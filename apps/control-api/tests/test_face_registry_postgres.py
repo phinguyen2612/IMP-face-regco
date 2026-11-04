@@ -198,6 +198,9 @@ def test_camera_source_migration_preserves_all_sources_and_legacy_rows(registry_
         local = service.create(
             CameraCreate(name="Synthetic local", source_type="local_webcam", device_index=2)
         )
+        phone = service.create(CameraCreate(
+            name="Synthetic phone", source_type="droidcam", rtsp_url="http://phone:4747/video"
+        ))
         # An installation predating the new source table stored browser sources here.
         connection.execute(
             "INSERT INTO camera_source_settings (camera_id,source_type) VALUES (%s,'webcam')",
@@ -211,6 +214,8 @@ def test_camera_source_migration_preserves_all_sources_and_legacy_rows(registry_
         assert service.require(camera.id).source_type == "webcam"
         assert service.require(local.id).source_type == "local_webcam"
         assert service.require(local.id).device_index == 2
+        assert service.require(phone.id).source_type == "droidcam"
+        assert service.get_public(phone.id).rtsp_url == "http://phone:4747/video"
         initialize_camera_schema(connection)  # legacy backfill never overwrites local settings
         assert service.require(local.id).device_index == 2
         changed = service.update(

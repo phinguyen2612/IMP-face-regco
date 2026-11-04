@@ -3,7 +3,7 @@ from dataclasses import replace
 from hashlib import sha256
 from pathlib import Path, PureWindowsPath
 
-from control_api.camera_postgres import connect_postgres
+from control_api.camera_postgres import connect_persistent_postgres
 from control_api.model_artifacts import (
     LocalModelArtifactStorage,
     ModelArtifactIngestor,
@@ -56,7 +56,7 @@ def build_model_registry(artifact_storage: ObjectStorage | None = None) -> Model
     )
     dsn = os.getenv("FR_POSTGRES_DSN")
     if dsn:
-        connection = connect_postgres(dsn)
+        connection = connect_persistent_postgres(dsn)
         initialize_model_schema(connection)
         repository: ModelRepository = PostgresModelRepository(connection)
     else:

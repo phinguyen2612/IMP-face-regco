@@ -197,6 +197,18 @@ def test_face_event_filters_page_and_vietnam_day_boundaries(monitoring):
     second = client.get("/api/v1/recognition/face-events", params={**params, "offset": 1}).json()
     assert first[0]["recognized_at"] == "2026-11-02T16:59:59+00:00"
     assert second[0]["recognized_at"] == "2026-11-01T17:00:00+00:00"
+    linked = client.get(
+        "/api/v1/recognition/face-events", params={"event_id": second[0]["id"]}
+    )
+    assert linked.status_code == 200
+    assert [row["id"] for row in linked.json()] == [second[0]["id"]]
+    assert client.get(
+        "/api/v1/recognition/face-events", params={"event_id": "missing"}
+    ).json() == []
+    assert client.get(
+        "/api/v1/recognition/face-events",
+        params={"event_id": second[0]["id"], "kind": "FACE_CAPTURED"},
+    ).json() == []
     assert (
         client.get("/api/v1/recognition/face-events", params={**params, "offset": 2}).json() == []
     )

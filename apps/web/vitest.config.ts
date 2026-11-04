@@ -4,6 +4,9 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   plugins: [react()],
   test: {
-    environment: "jsdom"
+    environment: "jsdom",
+    // Bound parallelism on Windows and avoid spawning a process per test file.
+    pool: "threads",
+    maxWorkers: 2
   }
 });

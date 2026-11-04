@@ -14,9 +14,30 @@ vi.mock('../features/monitoring/MonitoringPage',()=>({MonitoringPage:()=> <div>M
 vi.mock('../features/cameras/CameraPanel',()=>({CameraPanel:()=> <div>Camera workspace</div>}));
 vi.mock('../features/registry/FaceRegistryPanel',()=>({FaceRegistryPanel:()=> <div>Registry workspace</div>}));
 vi.mock('../features/models/ModelsPanel',()=>({ModelsPanel:()=> <div>Model workspace</div>}));
+vi.mock('../features/alerts/CameraNotifications',()=>({CameraNotifications:()=> <button>Thông báo camera</button>}));
+vi.mock('../features/history/CameraEventDetails',()=>({CameraEventDetails:({eventId,page}:{eventId:string;page:string})=> <div>Selected event: {page}/{eventId}</div>}));
 const admin={user:{user_id:'admin-1',email:'admin@example.test',role:'ADMIN',person_id:null},csrf_token:'csrf'};
 const teacher={user:{user_id:'teacher-1',email:'teacher@example.test',role:'TEACHER',person_id:null},csrf_token:'csrf'};
 const student={user:{user_id:'student-1',email:'student@example.test',role:'STUDENT',person_id:'person-1'},csrf_token:'csrf'};
+
+it('opens exact event deep links and updates when another notification on the same page is selected', async()=>{
+  authMocks.getCurrentSession.mockResolvedValue(admin);
+  window.history.replaceState(null,'','/#alerts?event=alert-1');
+  render(<App/>);
+  expect(await screen.findByText('Selected event: alerts/alert-1')).toBeTruthy();
+  act(()=>{window.location.hash='alerts?event=alert-2';window.dispatchEvent(new HashChangeEvent('hashchange'));});
+  expect(await screen.findByText('Selected event: alerts/alert-2')).toBeTruthy();
+  act(()=>{window.location.hash='history?event=entry-1';window.dispatchEvent(new HashChangeEvent('hashchange'));});
+  expect(await screen.findByText('Selected event: history/entry-1')).toBeTruthy();
+});
+
+it('denies event deep links for non-admin accounts', async()=>{
+  authMocks.getCurrentSession.mockResolvedValue(student);
+  window.history.replaceState(null,'','/#alerts?event=alert-1');
+  render(<App/>);
+  expect(await screen.findByRole('heading',{name:'Không có quyền truy cập'})).toBeTruthy();
+  expect(screen.queryByText(/Selected event:/)).toBeNull();
+});
 afterEach(()=>{cleanup();window.history.replaceState(null,'','/');localStorage.clear();document.documentElement.removeAttribute('data-theme');vi.clearAllMocks();authMocks.getCurrentSession.mockResolvedValue(admin);});
 
 it('shows sign in only when anonymous and opens no admin data stream',async()=>{authMocks.getCurrentSession.mockRejectedValue(new Error('AUTH_REQUIRED'));render(<App/>);expect(await screen.findByRole('heading',{name:'\u0110\u0103ng nh\u1eadp'})).toBeTruthy();expect(screen.queryByRole('navigation')).toBeNull();expect(disconnect).not.toHaveBeenCalled();});
@@ -26,4 +47,4 @@ it('clears the role workspace when the server session expires',async()=>{vi.useF
 it('denies another role deep links without starting the admin status stream',async()=>{authMocks.getCurrentSession.mockResolvedValue(teacher);window.history.replaceState(null,'','/#cameras');render(<App/>);expect(await screen.findByRole('heading',{name:'Kh\u00f4ng c\u00f3 quy\u1ec1n truy c\u1eadp'})).toBeTruthy();expect(screen.getByRole('navigation',{name:'\u0110i\u1ec1u h\u01b0\u1edbng ch\u00ednh'})).toBeTruthy();expect(screen.getByRole('link',{name:'L\u1edbp c\u1ee7a t\u00f4i'})).toBeTruthy();expect(screen.queryByRole('link',{name:'Camera tr\u1ef1c ti\u1ebfp'})).toBeNull();expect(disconnect).not.toHaveBeenCalled();});
 it('shows student self-service navigation and loads only the student profile',async()=>{authMocks.getCurrentSession.mockResolvedValue(student);window.history.replaceState(null,'','/#me/profile');render(<App/>);expect(await screen.findByRole('heading',{level:1,name:'H\u1ed3 s\u01a1 c\u1ee7a t\u00f4i'})).toBeTruthy();expect(screen.getByRole('link',{name:'\u0110\u0103ng k\u00fd khu\u00f4n m\u1eb7t'})).toBeTruthy();expect(screen.getByRole('link',{name:'\u0110i\u1ec3m danh c\u1ee7a t\u00f4i'})).toBeTruthy();expect(screen.queryByRole('link',{name:'Camera tr\u1ef1c ti\u1ebfp'})).toBeNull();expect(await screen.findByText('Student One')).toBeTruthy();expect(roleApiMocks.getMyProfile).toHaveBeenCalledTimes(1);expect(roleApiMocks.listTeacherClasses).not.toHaveBeenCalled();});
 it('keeps the Admin pages navigable and connects runtime status',async()=>{const user=userEvent.setup();render(<App/>);expect(await screen.findByRole('navigation',{name:'\u0110i\u1ec1u h\u01b0\u1edbng ch\u00ednh'})).toBeTruthy();expect(screen.getByText('Monitoring workspace')).toBeTruthy();await user.click(screen.getByRole('link',{name:'H\u1ed3 s\u01a1 khu\u00f4n m\u1eb7t'}));await screen.findByText('Registry workspace');expect(screen.queryByText('Camera workspace')).toBeNull();await user.click(screen.getByRole('link',{name:'M\u00f4 h\u00ecnh nh\u1eadn di\u1ec7n'}));await screen.findByText('Model workspace');expect(disconnect).not.toHaveBeenCalled();});
-it('supports admin deep links and releases runtime status on unmount',async()=>{window.history.replaceState(null,'','/#system');const {unmount}=render(<App/>);expect(await screen.findByRole('heading',{level:1,name:'Tr\u1ea1ng th\u00e1i h\u1ec7 th\u1ed1ng'})).toBeTruthy();window.history.replaceState(null,'','/#cameras');window.dispatchEvent(new HashChangeEvent('hashchange'));await waitFor(()=>expect(screen.getByText('Camera workspace')).toBeTruthy());expect(disconnect).not.toHaveBeenCalled();unmount();expect(disconnect).toHaveBeenCalledTimes(1);});
+it('supports admin deep links and releases runtime status on unmount',async()=>{window.history.replaceState(null,'','/#system');const {unmount}=render(<App/>);expect(await screen.findByRole('heading',{level:1,name:'Tr\u1ea1ng th\u00e1i h\u1ec7 th\u1ed1ng'})).toBeTruthy();act(()=>{window.history.replaceState(null,'','/#cameras');window.dispatchEvent(new HashChangeEvent('hashchange'));});await waitFor(()=>expect(screen.getByText('Camera workspace')).toBeTruthy());expect(disconnect).not.toHaveBeenCalled();unmount();expect(disconnect).toHaveBeenCalledTimes(1);});

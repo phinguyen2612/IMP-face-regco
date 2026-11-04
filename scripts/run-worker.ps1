@@ -1,3 +1,10 @@
+param(
+    [ValidateRange(160, 3840)][int]$Width = 960,
+    [ValidateRange(120, 2160)][int]$Height = 540,
+    [ValidateRange(1, 100)][int]$RingBufferCapacity = 8,
+    [ValidateRange(1, 30)][double]$ProcessingFps = 5
+)
+
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 Set-Location $root
@@ -7,6 +14,14 @@ if (-not (Test-Path -LiteralPath $python)) { throw 'Run .\scripts\setup-local.ps
 $tokenLine = Get-Content -LiteralPath '.env' | Where-Object { $_ -match '^\s*FR_WORKER_INTERNAL_TOKEN\s*=' } | Select-Object -First 1
 if (-not $tokenLine) { throw 'FR_WORKER_INTERNAL_TOKEN is missing from .env.' }
 $env:FR_WORKER_INTERNAL_TOKEN = ($tokenLine -replace '^\s*FR_WORKER_INTERNAL_TOKEN\s*=\s*', '').Trim('"', "'")
+foreach ($setting in @('FR_ORT_INTRA_OP_THREADS', 'FR_ORT_ALLOW_SPINNING', 'FR_OPENCV_THREADS')) {
+    $settingLine = Get-Content -LiteralPath '.env' | Where-Object { $_ -match "^\s*$setting\s*=" } | Select-Object -First 1
+    if ($settingLine) {
+        $settingValue = ($settingLine -replace "^\s*$setting\s*=\s*", '').Trim('"', "'")
+        [Environment]::SetEnvironmentVariable($setting, $settingValue, 'Process')
+    }
+}
 & $python -m vision_worker.main --control-api-url http://127.0.0.1:8000 `
-    --feature-config configuration/examples/face-recognition.example.json --processing-fps 5
+    --feature-config configuration/examples/face-recognition.example.json --processing-fps $ProcessingFps `
+    --width $Width --height $Height --ring-buffer-capacity $RingBufferCapacity
 if ($LASTEXITCODE -ne 0) { throw "Vision worker stopped with exit code $LASTEXITCODE." }

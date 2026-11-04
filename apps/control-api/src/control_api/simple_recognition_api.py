@@ -339,6 +339,7 @@ def create_simple_recognition_router(
         @router.get("/recognition/face-events")
         def face_events(
             response: Response,
+            event_id: str | None = None,
             camera_id: str | None = None,
             kind: str | None = None,
             start: date | None = None,
@@ -353,6 +354,7 @@ def create_simple_recognition_router(
                 raise HTTPException(422, "INVALID_DATE_RANGE")
             timezone = ZoneInfo("Asia/Ho_Chi_Minh")
             return events.face_events.history(
+                event_id=event_id,
                 camera_id=camera_id,
                 kind=kind,
                 offset=offset,

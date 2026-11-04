@@ -2,6 +2,43 @@ from control_api.camera_postgres import PostgresCameraRepository, initialize_cam
 from control_api.cameras import CameraRecord
 
 
+def test_persistent_connection_recovers_after_loss_without_replaying_a_commit():
+    import pytest
+    from control_api.camera_postgres import PersistentPostgresConnection
+
+    class Session(Connection):
+        closed = False
+
+        def close(self):
+            self.closed = True
+
+        def commit(self):
+            if self.closed:
+                raise OSError("connection lost during commit")
+            super().commit()
+
+    sessions = []
+
+    def connect():
+        session = Session()
+        sessions.append(session)
+        return session
+
+    connection = PersistentPostgresConnection(connect)
+    repository = PostgresCameraRepository(connection)
+    assert repository.list() == []
+    sessions[0].close()
+    with pytest.raises(OSError, match="connection lost during commit"):
+        connection.commit()
+    assert len(sessions) == 1  # Never report a lost write as successful.
+    assert repository.list() == []  # The next operation obtains a new session.
+    assert len(sessions) == 2
+    connection.close()
+    with pytest.raises(RuntimeError, match="POSTGRES_CONNECTION_CLOSED"):
+        repository.list()
+    assert len(sessions) == 2  # Shutdown must not silently restart the connection.
+
+
 def test_reader_never_observes_source_midway_through_camera_update():
     from concurrent.futures import ThreadPoolExecutor, TimeoutError
     from threading import Event

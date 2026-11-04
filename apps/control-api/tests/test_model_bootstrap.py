@@ -23,7 +23,7 @@ def test_explicit_postgres_failure_does_not_fallback_to_memory(
     def unavailable(_dsn: str) -> object:
         raise OSError("database unavailable")
 
-    monkeypatch.setattr(model_bootstrap, "connect_postgres", unavailable)
+    monkeypatch.setattr(model_bootstrap, "connect_persistent_postgres", unavailable)
 
     with pytest.raises(OSError, match="database unavailable"):
         model_bootstrap.build_model_registry()

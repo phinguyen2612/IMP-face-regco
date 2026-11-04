@@ -40,7 +40,7 @@ export interface RuntimeStatus {
 }
 
 export type CameraCodec = "AUTO" | "H264" | "H265";
-export type CameraSourceType = "rtsp" | "local_webcam" | "webcam";
+export type CameraSourceType = "rtsp" | "local_webcam" | "webcam" | "droidcam";
 
 export interface CameraPublic {
   id: string;

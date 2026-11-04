@@ -78,6 +78,10 @@ class OpenCvFaceModels:
             ),
             "model_names": ["YuNet", "SFace"],
             "profile": self.config["profile"],
+            "runtime": {
+                "backend": "opencv_cpu",
+                "threads": self.cv.getNumThreads() if self.cv is not None else None,
+            },
         }
 
     def load(self) -> None:
@@ -95,6 +99,15 @@ class OpenCvFaceModels:
                 paths[role] = str(path)
             cv = import_module("cv2")
             np = import_module("numpy")
+            configured_threads = os.getenv("FR_OPENCV_THREADS")
+            if configured_threads is not None:
+                try:
+                    threads = int(configured_threads)
+                    if not 1 <= threads <= 64:
+                        raise ValueError
+                except ValueError as error:
+                    raise ComparisonError("INVALID_CPU_THREAD_CONFIGURATION") from error
+                cv.setNumThreads(threads)
             detector = cv.FaceDetectorYN.create(
                 paths["detector"],
                 "",

@@ -9,20 +9,22 @@ Cài đặt Python 3.11 trở lên, Node.js 20.19 trở lên (hoặc 22.12 trở
 ```powershell
 .\scripts\setup-local.ps1 -DownloadFaceModels
 .\scripts\start-local.ps1
+
 ```
 
 Lệnh setup tạo `.env` với khóa ngẫu nhiên nếu file chưa có, tạo môi trường Python, cài thư viện Python và web, rồi tải YuNet/SFace chính thức và kiểm tra SHA-256. File `.env` có thông tin đăng nhập cục bộ; script không ghi đè file đã tồn tại và Git bỏ qua file này. `data/` chứa model và dữ liệu cục bộ cũng không được đưa lên Git.
 
-`start-local.ps1` khởi động PostgreSQL, Redis, MinIO, API và web trong các cửa sổ riêng. Truy cập:
+`start-local.ps1` khởi động PostgreSQL, Redis, MinIO, API, worker và web. Worker được bật mặc định để webcam trên máy worker và DroidCam có thể gửi hình; script bỏ qua worker/web đã chạy. Truy cập:
 
 - Web: <http://127.0.0.1:5173>
 - API health: <http://127.0.0.1:8000/health>
 - MinIO console: <http://127.0.0.1:59001> (thông tin đăng nhập nằm trong `.env`)
 
-Để chạy worker cùng lúc, cài GStreamer và Python GI bindings theo [hướng dẫn worker](infrastructure/local/README.md), sau đó chạy:
+RTSP cần GStreamer và Python GI bindings theo [hướng dẫn worker](infrastructure/local/README.md). Webcam trực tiếp và DroidCam dùng OpenCV/HTTP, không cần GStreamer. Có thể chỉ định rõ worker hoặc tắt worker khi chỉ dùng webcam trình duyệt:
 
 ```powershell
 .\scripts\start-local.ps1 -WithWorker
+.\scripts\start-local.ps1 -WithWorker:$false
 ```
 
 Hoặc chạy riêng các tiến trình bằng `scripts/run-api.ps1`, `scripts/run-web.ps1` và `scripts/run-worker.ps1`. Dừng API, web và worker bằng `Ctrl+C` trong cửa sổ tương ứng; dừng dịch vụ Docker bằng:
@@ -45,11 +47,26 @@ Nhập email và mật khẩu admin khi được hỏi. Admin tạo tài khoản
 
 ## Camera và nhận diện
 
-Thêm camera trong mục **Cameras** với một trong ba nguồn: RTSP, webcam trên máy worker hoặc webcam trình duyệt. Thiết lập ROI Polygon trên khung hình để giới hạn vùng theo dõi. API cần chạy một tiến trình để giữ session webcam trình duyệt.
+Thêm camera trong mục **Cameras** với nguồn RTSP, webcam trên máy worker, webcam trình duyệt hoặc DroidCam. Thiết lập ROI Polygon trên khung hình để giới hạn vùng theo dõi. API cần chạy một tiến trình để giữ session webcam trình duyệt.
+
+Để nhận hình theo từng nguồn:
+
+- **Webcam trình duyệt**: mở Giám sát, bấm **Bắt đầu realtime**, cho phép camera. Có thể chọn thiết bị hoặc camera trước/sau điện thoại. Truy cập qua localhost hoặc HTTPS; HTTP bằng IP mạng LAN không hỗ trợ quyền webcam trong trình duyệt.
+- **Webcam trên máy worker**: chọn đúng số thiết bị (thường là `0`), áp dụng cấu hình và chạy worker. Đóng ứng dụng khác đang chiếm webcam.
+- **DroidCam**: chọn nguồn DroidCam, nhập URL `/video` hiển thị trên điện thoại, áp dụng cấu hình và chạy worker. Máy worker phải truy cập được địa chỉ điện thoại; xem [hướng dẫn DroidCam](docs/droidcam.md).
+- **RTSP**: cấu hình URL camera và môi trường GStreamer của worker.
+
+Nếu dùng một reverse proxy HTTPS đã được cấu hình, khai báo đúng origin công khai khi khởi động web để đăng nhập và gửi frame không bị lỗi `same-origin`:
+
+```powershell
+.\scripts\run-web.ps1 -PublicOrigin 'https://ten-mien-cua-ban.example'
+```
+
+Tham số này không tự tạo đường hầm hay công khai dịch vụ. Localhost vẫn sử dụng được đồng thời; kiểm tra origin và CSRF vẫn được giữ.
 
 YuNet/SFace được dùng để phát hiện và so sánh mặt với ảnh đăng ký đã duyệt. Chưa có ảnh tham chiếu vẫn có thể phát hiện mặt và vẽ bbox; danh tính chưa thể xác minh. Trong **Models**, tải model Person Detection phù hợp để bật bbox người và tracking. Model YOLOX, SCRFD và AdaFace do người vận hành cung cấp; repo không chứa model huấn luyện hoặc thông tin camera thật.
 
-Worker cần GStreamer và Python GI bindings cho các nguồn video được hỗ trợ. Camera thực tế và tốc độ xử lý phụ thuộc model, thiết bị, cấu hình sampling FPS và nguồn video. Kết quả test tích hợp không khẳng định độ chính xác thực tế của model.
+Worker cần GStreamer và Python GI bindings khi dùng RTSP. Camera thực tế và tốc độ xử lý phụ thuộc model, thiết bị, cấu hình sampling FPS và nguồn video. Kết quả test tích hợp không khẳng định độ chính xác thực tế của model.
 
 ## Kiểm tra trước khi push
 

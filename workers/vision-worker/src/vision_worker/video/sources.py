@@ -1,6 +1,7 @@
 from vision_worker.camera_config import ActiveCamera
 from vision_worker.video.browser import HttpBrowserCameraBackend
 from vision_worker.video.camera import GStreamerCameraSource
+from vision_worker.video.droidcam import DroidCamBackend
 from vision_worker.video.gstreamer_inprocess import GStreamerRtspBackend, load_gstreamer
 from vision_worker.video.local_webcam import LocalWebcamBackend
 from vision_worker.video.preview import PreviewCameraSource, WorkerPreviewPublisher
@@ -13,6 +14,16 @@ def create_camera_source(
     width: int,
     height: int,
 ) -> GStreamerCameraSource:
+    if config.source_type == "droidcam":
+        if not config.rtsp_url:
+            raise RuntimeError("DROIDCAM_URL_REQUIRED")
+        source = PreviewCameraSource(
+            config.id, config.rtsp_url, "AUTO", "http", DroidCamBackend(width, height)
+        )
+        source.preview = WorkerPreviewPublisher(
+            api_url, config.id, config.revision, worker_token, display_fps=config.display_fps
+        )
+        return source
     if config.source_type == "local_webcam":
         if config.device_index is None:
             raise RuntimeError("LOCAL_WEBCAM_DEVICE_REQUIRED")

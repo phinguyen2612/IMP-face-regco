@@ -99,7 +99,7 @@ export function CameraPanel({ runtimeStatuses }: CameraPanelProps) {
       await createCamera({
         name,
         source_type: source,
-        ...(source === "rtsp" ? { rtsp_url: url } : {}),
+        ...(source === "rtsp" || source === "droidcam" ? { rtsp_url: url.trim() } : {}),
         ...(source === "local_webcam" ? { device_index: Number(deviceIndex) } : {}),
         codec,
         enabled: true,
@@ -166,9 +166,9 @@ export function CameraPanel({ runtimeStatuses }: CameraPanelProps) {
       }
       if (editSource !== camera.source_type || index !== camera.device_index) update.device_index = index;
     }
-    if (editSource === "rtsp" && editUrl) update.rtsp_url = editUrl;
-    if (editSource === "rtsp" && camera.source_type !== "rtsp" && !editUrl) {
-      setMessage("Nhập RTSP URL khi chuyển từ Webcam sang RTSP."); return;
+    if ((editSource === "rtsp" || editSource === "droidcam") && editUrl) update.rtsp_url = editUrl.trim();
+    if ((editSource === "rtsp" || editSource === "droidcam") && camera.source_type !== editSource && !editUrl.trim()) {
+      setMessage("Nhập địa chỉ kết nối khi chuyển nguồn camera."); return;
     }
     try {
       setSaving(true);
@@ -198,10 +198,14 @@ export function CameraPanel({ runtimeStatuses }: CameraPanelProps) {
           <label>Tên camera<input placeholder="Ví dụ: Cửa vào phòng A101" value={name} onChange={(event) => setName(event.target.value)} required /></label>
           <label>Nguồn<select value={source} onChange={event => { setSource(event.target.value as CameraSourceType); setUrl(""); }}>
             <option value="rtsp">RTSP</option>
+            <option value="droidcam">DroidCam (Wi-Fi)</option>
             <option value="local_webcam">Webcam trực tiếp trên máy worker</option>
             <option value="webcam">Webcam trình duyệt</option>
           </select></label>
-          {source === "rtsp" ? <>
+          {source === "droidcam" ? <>
+            <label>Địa chỉ video DroidCam<input type="url" value={url} onChange={event => setUrl(event.target.value)} placeholder="http://192.168.1.100:4747/video" required autoComplete="off" /></label>
+            <p className="field-hint">Mở DroidCam trên điện thoại, kết nối cùng Wi-Fi với máy tính. Nhập địa chỉ theo mẫu http://IP:4747/video, dùng đúng IP và cổng hiển thị trong DroidCam. Sau khi lưu, bấm Bật camera và nhận diện.</p>
+          </> : source === "rtsp" ? <>
             <label>Địa chỉ RTSP<input type="password" value={url} onChange={(event) => setUrl(event.target.value)} required autoComplete="new-password" /></label>
             <label>Bộ giải mã<select value={codec} onChange={(event) => setCodec(event.target.value as CameraCodec)}>
               <option>AUTO</option><option>H264</option><option>H265</option>
@@ -233,6 +237,7 @@ export function CameraPanel({ runtimeStatuses }: CameraPanelProps) {
                   <label>Nguồn camera<select value={editSource}
                     onChange={event => { setEditSource(event.target.value as CameraSourceType); setEditUrl(""); }}>
                     <option value="rtsp">RTSP</option>
+                    <option value="droidcam">DroidCam (Wi-Fi)</option>
                     <option value="local_webcam">Webcam trực tiếp trên máy worker</option>
                     <option value="webcam">Webcam trình duyệt</option>
                   </select></label>
@@ -240,6 +245,10 @@ export function CameraPanel({ runtimeStatuses }: CameraPanelProps) {
                     <input type="number" min={0} max={63} step={1} value={editDeviceIndex}
                       onChange={event => setEditDeviceIndex(event.target.value)} />
                   </label>}
+                  {editSource === "droidcam" && <>
+                    <label>Địa chỉ video DroidCam mới (không bắt buộc)<input type="url" value={editUrl} onChange={event => setEditUrl(event.target.value)} placeholder="http://192.168.1.100:4747/video" autoComplete="off" required={camera.source_type !== 'droidcam'} /></label>
+                    <p className="field-hint">Để trống để giữ kết nối hiện tại. Máy tính và điện thoại cần cùng mạng Wi-Fi; DroidCam phải đang mở.</p>
+                  </>}
                   {editSource === "rtsp" && <>
                   <label>
                     Địa chỉ RTSP mới (không bắt buộc)
@@ -301,7 +310,7 @@ export function CameraPanel({ runtimeStatuses }: CameraPanelProps) {
                 <>
                   <h3>{camera.name}</h3>
                   <p>{camera.source_type === "webcam" ? "Webcam trình duyệt" :
-                    camera.source_type === "local_webcam" ? `Webcam trực tiếp trên máy worker · Thiết bị ${camera.device_index ?? 0}` : camera.rtsp_url}</p>
+                    camera.source_type === "local_webcam" ? `Webcam trực tiếp trên máy worker · Thiết bị ${camera.device_index ?? 0}` : camera.source_type === "droidcam" ? `DroidCam (Wi-Fi) · ${camera.rtsp_url ?? ''}` : camera.rtsp_url}</p>
                   <p className="status-chip">{cameraRuntimeLabel(camera, runtime)}</p>
                   <p>{camera.lifecycle === 'ACTIVE' ? 'Đã gửi cấu hình' : 'Bản nháp chưa áp dụng'} · {runtime?.active_config_revision === camera.revision && camera.lifecycle === 'ACTIVE' ? 'Worker đã nhận phiên bản này' : 'Chưa có xác nhận phiên bản từ worker'}</p>
                   <p>{(camera.roi_polygon?.length ?? 0) >= 3 ? `ROI polygon · ${camera.roi_polygon?.length ?? 0} điểm` : "ROI: toàn khung hình"} ·

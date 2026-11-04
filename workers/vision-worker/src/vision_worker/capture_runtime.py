@@ -58,6 +58,7 @@ class CaptureOnlyRuntime:
                     if snapshot.last_error
                     and (
                         snapshot.last_error.startswith("LOCAL_WEBCAM_")
+                        or snapshot.last_error.startswith("DROIDCAM_")
                         or snapshot.last_error == "OPENCV_UNAVAILABLE"
                     )
                     else "CAMERA_CONNECTION_FAILED"

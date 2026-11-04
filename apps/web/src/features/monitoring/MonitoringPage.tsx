@@ -3,11 +3,13 @@ import {listCameras} from '../../api/client';
 import type {CameraPublic, RuntimeStatus} from '../../api/contracts';
 import {BrowserWebcamLive} from '../cameras/BrowserWebcamLive';
 import {CameraRecognition} from '../cameras/CameraRecognition';
-import {FaceEventsPanel} from '../history/FaceEventsPanel';
+import {Icon} from '../../ui/Icon';
+import {DataState} from '../../ui/DataState';
 
 export function cameraRuntimeLabel(camera: CameraPublic, runtime?: RuntimeStatus): string {
   if (!camera.enabled) return 'Đã tắt';
   if (camera.lifecycle !== 'ACTIVE') return 'Chưa áp dụng cấu hình';
+  if (camera.source_type === 'webcam' && !runtime) return 'Nguồn webcam trình duyệt';
   if (!runtime) return 'Chưa nhận trạng thái worker';
   if (!runtime.last_frame_at || Date.now() - Date.parse(runtime.last_frame_at) > 15000) return 'Chưa có hình mới';
   if (runtime.active_config_revision !== camera.revision) return 'Đang chờ phiên bản cấu hình';
@@ -39,14 +41,15 @@ export function MonitoringPage({statuses, overview = false}: {statuses: RuntimeS
   }, []);
   const camera = cameras.find(item => item.id === selected);
   const runtime = statuses.find(item => item.camera_id === selected);
+  useEffect(() => {try {sessionStorage.setItem('monitor-camera', selected);} catch { /* Optional preference. */ }}, [selected]);
   return <section className="operations-workspace">
     {error && <p className="form-error" role="alert">{error}</p>}
-    {loading ? <p role="status">Đang tải camera…</p> : !cameras.length ? <article className="empty-state"><h2>Bắt đầu với camera đầu tiên</h2><p>Thêm nguồn hình, kiểm tra kết nối rồi áp dụng cấu hình để bắt đầu giám sát.</p><a href="#cameras" className="primary-action">Thiết lập camera</a></article> : <>
-      {overview && <div className="operations-summary"><div><span>Camera đã cấu hình</span><strong>{cameras.length}</strong></div><div><span>Cấu hình đã kích hoạt</span><strong>{cameras.filter(c => c.enabled && c.lifecycle === 'ACTIVE').length}</strong></div><div><span>Cần áp dụng cấu hình</span><strong>{cameras.filter(c => c.lifecycle === 'DRAFT').length}</strong></div></div>}
-      <div className="operations-layout"><div className="operations-primary">
-        <div className="monitor-toolbar"><label>Camera đang xem<select value={selected} onChange={event => setSelected(event.target.value)}>{cameras.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><a href="#cameras">Cấu hình camera →</a></div>
-        {camera && <article className="monitor-stage"><div className="monitor-status"><span className="status-chip">{cameraRuntimeLabel(camera, runtime)}</span><span>{runtime?.last_frame_at ? `Hình gần nhất: ${new Date(runtime.last_frame_at).toLocaleTimeString('vi-VN')}` : 'Chưa có thời gian nhận hình'}</span></div>{camera.source_type === 'webcam' && <BrowserWebcamLive camera={camera}/>}<CameraRecognition key={camera.id} camera={camera} roiPolygon={camera.roi_polygon}/><details className="runtime-details"><summary>Thông số vận hành</summary><dl><dt>Tốc độ xử lý</dt><dd>{runtime ? `${runtime.processed_fps.toFixed(1)} FPS` : 'Chưa có dữ liệu'}</dd><dt>Model người</dt><dd>{runtime?.person_detector_runtime?.model_version ?? 'Chưa có báo cáo'}</dd><dt>Cảnh báo người lạ</dt><dd>{camera.unknown_alert_frames ?? 5} frame liên tiếp</dd><dt>Lưu ảnh minh chứng</dt><dd>{camera.evidence_retention_days ?? 30} ngày</dd></dl></details></article>}
-      </div><aside className="operations-events"><div className="section-heading"><h2>Sự kiện camera</h2><a href="#alerts">Xem tất cả</a></div>{camera && <FaceEventsPanel cameraId={camera.id} compact/>}</aside></div>
+    {loading ? <DataState loading title="Đang tải camera…"/> : !cameras.length ? !error && <article className="empty-state"><Icon name="camera"/><h2>Bắt đầu với camera đầu tiên</h2><p>Thêm nguồn hình, kiểm tra kết nối rồi áp dụng cấu hình để bắt đầu giám sát.</p><a href="#cameras" className="primary-action">Thiết lập camera</a></article> : <>
+      {overview && <div className="operations-summary"><div><span><Icon name="camera"/>Camera đã cấu hình</span><strong>{cameras.length}</strong><small>Nguồn hình trong hệ thống</small></div><div><span><Icon name="check"/>Cấu hình đã kích hoạt</span><strong>{cameras.filter(c => c.enabled && c.lifecycle === 'ACTIVE').length}</strong><small>Đã bật và áp dụng cấu hình</small></div><div><span><Icon name="settings"/>Cần áp dụng cấu hình</span><strong>{cameras.filter(c => c.lifecycle === 'DRAFT').length}</strong><small>Camera đang ở bản nháp</small></div></div>}
+      <div className="operations-primary">
+        <div className="monitor-toolbar"><label>Camera đang xem<select value={selected} onChange={event => setSelected(event.target.value)}>{cameras.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><div className="monitor-view-actions"><a className="quiet-action" href="#livewall"><Icon name="grid"/>Mở Livewall</a><a className="quiet-action" href="#cameras"><Icon name="settings"/>Cấu hình camera</a></div></div>
+        {camera && <article className="monitor-stage"><header className="monitor-stage-heading"><div><span className="camera-heading-icon"><Icon name="camera"/></span><div><h2>{camera.name}</h2><p>Camera đang xem</p></div></div><span className="product-badge tone-neutral">{cameraRuntimeLabel(camera, runtime)}</span></header>{camera.source_type === 'webcam' && <div className="monitor-webcam-controls"><BrowserWebcamLive camera={camera}/></div>}<div className="monitor-feed"><CameraRecognition key={camera.id} camera={camera} roiPolygon={camera.roi_polygon}/></div><div className="camera-status-strip"><div><span>Hình gần nhất</span><strong>{runtime?.last_frame_at ? new Date(runtime.last_frame_at).toLocaleTimeString('vi-VN', {timeZone:'Asia/Ho_Chi_Minh'}) : 'Chưa có dữ liệu'}</strong></div><div><span>Cảnh báo người lạ</span><strong>{camera.unknown_alert_frames ?? 5} frame liên tiếp</strong></div><div><span>Thời hạn lưu ảnh</span><strong>{camera.evidence_retention_days ?? 30} ngày</strong></div><a href="#alerts">Evidence người lạ <Icon name="arrow"/></a></div><details className="runtime-details"><summary>Thông số vận hành</summary><dl><dt>Tốc độ xử lý</dt><dd>{runtime ? `${runtime.processed_fps.toFixed(1)} FPS` : 'Chưa có dữ liệu'}</dd><dt>Model người</dt><dd>{runtime?.person_detector_runtime?.model_version ?? 'Chưa có báo cáo'}</dd></dl></details></article>}
+      </div>
     </>}
   </section>;
 }

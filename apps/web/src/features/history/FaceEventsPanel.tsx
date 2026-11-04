@@ -1,12 +1,29 @@
-import {useEffect, useState} from 'react';
+import {useEffect, useRef, useState} from 'react';
 import {apiFetch} from '../../api/client';
 import type {FacePresenceEvent} from '../../api/simpleRecognition';
+import {downloadEvidenceReport} from './evidenceReport';
+import {EvidenceMedia, evidenceLabels} from './EvidenceMedia';
+import {DataState} from '../../ui/DataState';
+import {Icon} from '../../ui/Icon';
 
-export function FaceEventsPanel({cameraId, kind, compact = false, start, end}: {cameraId?: string; kind?: string; compact?: boolean; start?: string; end?: string}) {
+export function FaceEventsPanel({cameraId, kind, compact = false, start, end, report = false, eventId}: {cameraId?: string; kind?: FacePresenceEvent['kind']; compact?: boolean; start?: string; end?: string; report?: boolean; eventId?: string}) {
   const [events, setEvents] = useState<FacePresenceEvent[]>([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [offset, setOffset] = useState(0);
+  const selectedEvent = useRef<HTMLElement>(null);
+  const focusedId = useRef<string | undefined>(undefined);
+  function detailsHref(event: FacePresenceEvent) {
+    const params = new URLSearchParams(report ? window.location.hash.split('?')[1] : '');
+    params.set('event', event.id);
+    return `#${event.kind === 'UNKNOWN_ALERT' ? 'alerts' : 'history'}?${params}`;
+  }
+  useEffect(() => {
+    if (!eventId || !events.some(event => event.id === eventId) || focusedId.current === eventId) return;
+    selectedEvent.current?.focus();
+    selectedEvent.current?.scrollIntoView?.({block: 'center'});
+    focusedId.current = eventId;
+  }, [eventId, events]);
   useEffect(() => setOffset(0), [cameraId, kind, start, end]);
   useEffect(() => {
     let disposed = false;
@@ -15,8 +32,10 @@ export function FaceEventsPanel({cameraId, kind, compact = false, start, end}: {
     setLoading(true);
     setEvents([]);
     async function load() {
+      if (document.visibilityState === 'hidden') {timer = setTimeout(() => void load(), 3000); return;}
       try {
         const params = new URLSearchParams();
+        if (eventId) params.set('event_id', eventId);
         if (cameraId) params.set('camera_id', cameraId);
         if (kind) params.set('kind', kind);
         if (start) params.set('start', start);
@@ -37,22 +56,26 @@ export function FaceEventsPanel({cameraId, kind, compact = false, start, end}: {
     }
     void load();
     return () => {disposed = true; controller.abort(); clearTimeout(timer);};
-  }, [cameraId, kind, start, end, compact, offset]);
-  return <section aria-label="Ảnh vào và cảnh báo người lạ">
-    {!compact && <p>Ảnh khuôn mặt được chụp khi mới xuất hiện trong ROI. Cảnh báo người lạ chỉ được ghi sau đủ số frame liên tiếp đã cấu hình. Đây là sự kiện giám sát, không phải kết quả điểm danh.</p>}
-    {error && <p role="alert">{error}</p>}
-    {loading && <p role="status">Đang tải ảnh và cảnh báo…</p>}
-    {!loading && !error && events.length === 0 && <p>Chưa có ảnh vào hoặc cảnh báo.</p>}
-    <div className="history-list">{(compact ? events.slice(0, 8) : events).map(event => <article className={`history-event ${event.kind === 'UNKNOWN_ALERT' ? 'event-alert' : ''}`} key={event.id}>
-      {event.evidence_status === 'READY' && event.evidence_key
-        ? <img src={`/api/v1/recognition/evidence/${encodeURIComponent(event.evidence_key)}`} alt={event.kind === 'UNKNOWN_ALERT' ? 'Snapshot cảnh báo người lạ' : 'Khuôn mặt khi vào ROI'} loading="lazy" />
-        : <p>{event.evidence_status === 'PENDING' ? 'Đang lưu ảnh…' : event.evidence_status === 'EXPIRED' ? 'Ảnh đã hết hạn lưu.' : 'Không lưu được ảnh; sự kiện vẫn được ghi nhận.'}</p>}
-      <div>
+  }, [cameraId, kind, start, end, compact, offset, eventId]);
+  return <section className={`event-workspace ${eventId ? 'event-detail-workspace' : ''}`} aria-label={report ? 'Báo cáo evidence người lạ' : 'Ảnh vào và cảnh báo người lạ'}>
+    {!compact && !eventId && <div className="event-list-heading"><div><h2>{report ? 'Ảnh minh chứng' : 'Sự kiện đã ghi nhận'}</h2><p>{loading ? 'Đang cập nhật danh sách' : `${events.length} sự kiện trên trang này`} · Theo giờ Việt Nam</p></div>
+      {report && <button className="secondary-button" type="button" disabled={loading || !!error || !events.length} onClick={() => downloadEvidenceReport(events, offset / 50 + 1)}><Icon name="download"/>Xuất báo cáo trang này (CSV)</button>}</div>}
+    {error && <DataState error title={error} description={events.length ? 'Đang hiển thị dữ liệu lần tải trước. Hệ thống sẽ tự thử kết nối lại.' : 'Hệ thống sẽ tự thử kết nối lại.'}/>}
+    {loading && <DataState loading title="Đang tải ảnh và cảnh báo…"/>}
+    {!loading && !error && events.length === 0 && <DataState title={eventId ? 'Không tìm thấy sự kiện này hoặc sự kiện không còn khả dụng.' : report ? 'Chưa có evidence người lạ trong bộ lọc đã chọn.' : 'Chưa có ảnh vào hoặc cảnh báo.'} description={eventId ? 'Quay về danh sách để xem các sự kiện còn khả dụng.' : 'Sự kiện sẽ xuất hiện tại đây khi được camera ghi nhận.'}/>}
+    <div className="evidence-list">{(compact ? events.slice(0, 8) : events).map(event => <article ref={event.id === eventId ? selectedEvent : undefined} tabIndex={event.id === eventId ? -1 : undefined} aria-label={event.id === eventId ? 'Sự kiện đang xem' : undefined} className={`evidence-row ${event.id === eventId ? 'selected-event' : ''}`} key={event.id}>
+      <EvidenceMedia event={event}/>
+      <div className="evidence-copy">
+        <div className="evidence-row-title"><span className={`product-badge ${event.kind === 'UNKNOWN_ALERT' ? 'tone-warning' : 'tone-neutral'}`}><Icon name={event.kind === 'UNKNOWN_ALERT' ? 'warning' : 'camera'}/>{event.kind === 'UNKNOWN_ALERT' ? 'Người lạ' : 'Ảnh vào ROI'}</span><span className={`product-badge state-evidence-${event.evidence_status.toLowerCase()}`}>{evidenceLabels[event.evidence_status]}</span></div>
         <h3>{event.kind === 'UNKNOWN_ALERT' ? 'Cảnh báo người lạ' : 'Khuôn mặt mới vào ROI'}</h3>
-        <p>{event.camera_name} · {new Date(event.recognized_at).toLocaleString('vi-VN')}</p>
-        {event.kind === 'UNKNOWN_ALERT' && <p>{event.consecutive_unknown} frame liên tiếp không khớp ảnh đăng ký.</p>}
+        <p className="evidence-camera"><Icon name="camera"/>{event.camera_name}</p>
+        <time dateTime={event.recognized_at}>{new Date(event.recognized_at).toLocaleString('vi-VN', {timeZone: 'Asia/Ho_Chi_Minh'})}</time>
+        {eventId && <div className="event-facts"><span>Căn cứ ghi nhận</span><p>{event.kind === 'UNKNOWN_ALERT' ? `${event.consecutive_unknown} frame liên tiếp không khớp ảnh đăng ký.` : 'Khuôn mặt mới xuất hiện trong vùng theo dõi.'}</p><span>Trạng thái ảnh</span><p>{evidenceLabels[event.evidence_status]}</p></div>}
+        {!eventId && event.kind === 'UNKNOWN_ALERT' && <p className="event-basis">{event.consecutive_unknown} frame liên tiếp không khớp ảnh đăng ký.</p>}
+        <div className="evidence-actions">{!eventId && <a className="event-detail-link" href={detailsHref(event)}>Xem chi tiết <Icon name="arrow"/></a>}
+          {event.evidence_status === 'READY' && event.evidence_key && <a className={eventId ? 'button-link' : 'evidence-original-link'} href={`/api/v1/recognition/evidence/${encodeURIComponent(event.evidence_key)}`} target="_blank" rel="noreferrer">Mở ảnh minh chứng</a>}</div>
       </div>
     </article>)}</div>
-    {!compact && <div className="camera-actions"><button disabled={loading || offset === 0} onClick={() => setOffset(value => Math.max(0, value - 50))}>Trang trước</button><span>Trang {offset / 50 + 1}</span><button disabled={loading || events.length < 50} onClick={() => setOffset(value => value + 50)}>Trang sau</button></div>}
+    {!compact && !eventId && <div className="pagination-bar"><span>Trang {offset / 50 + 1} <span className="pagination-note">· Tối đa 50 sự kiện</span></span><div><button disabled={loading || offset === 0} onClick={() => setOffset(value => Math.max(0, value - 50))}>Trang trước</button><button disabled={loading || events.length < 50} onClick={() => setOffset(value => value + 50)}>Trang sau</button></div></div>}
   </section>;
 }

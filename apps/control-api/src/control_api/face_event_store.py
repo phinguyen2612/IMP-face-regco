@@ -224,6 +224,7 @@ class FaceEventStore:
     def history(
         self,
         *,
+        event_id: str | None = None,
         camera_id: str | None = None,
         kind: str | None = None,
         start: str | None = None,
@@ -233,7 +234,7 @@ class FaceEventStore:
     ) -> list[dict[str, object]]:
         self.expire()
         clauses, values = [], []
-        for column, value in (("camera_id", camera_id), ("kind", kind)):
+        for column, value in (("id", event_id), ("camera_id", camera_id), ("kind", kind)):
             if value:
                 clauses.append(column + "=?")
                 values.append(value)
