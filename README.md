@@ -66,6 +66,8 @@ Tham số này không tự tạo đường hầm hay công khai dịch vụ. Loc
 
 YuNet/SFace được dùng để phát hiện và so sánh mặt với ảnh đăng ký đã duyệt. Chưa có ảnh tham chiếu vẫn có thể phát hiện mặt và vẽ bbox; danh tính chưa thể xác minh. Trong **Models**, tải model Person Detection phù hợp để bật bbox người và tracking. Model YOLOX, SCRFD và AdaFace do người vận hành cung cấp; repo không chứa model huấn luyện hoặc thông tin camera thật.
 
+Có thể dùng **RetinaFace MobileNet 0.25 + AdaFace IR18** qua model registry. Xem [hướng dẫn triển khai và kết quả chạy thử](docs/acceptance/2026-11-05-retinaface-adaface-trial.md). Chế độ này dùng `FR_SIMPLE_FACE_ENGINE=registry` trong `.env`; ảnh tham chiếu được xử lý lại bằng model mới và giao diện hiển thị tên model đang dùng. Setup mặc định vẫn tải YuNet/SFace.
+
 Worker cần GStreamer và Python GI bindings khi dùng RTSP. Camera thực tế và tốc độ xử lý phụ thuộc model, thiết bị, cấu hình sampling FPS và nguồn video. Kết quả test tích hợp không khẳng định độ chính xác thực tế của model.
 
 ## Kiểm tra trước khi push

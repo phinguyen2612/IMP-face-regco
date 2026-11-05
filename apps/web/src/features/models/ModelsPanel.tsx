@@ -40,8 +40,8 @@ export function ModelsPanel() {
     <h2 id="simple-models-heading">Mô hình nhận diện</h2>
     {error && <p role="alert">{error}</p>}
     <article>
-      <h3>YuNet + SFace</h3>
-      <p>YuNet tìm khuôn mặt; SFace so sánh với ảnh đã đăng ký. Model và ảnh mẫu được xử lý tự động.</p>
+      <h3>{status?.model_names?.length ? status.model_names.join(' + ') : 'Đang tải mô hình…'}</h3>
+      <p>Model đang kích hoạt tìm khuôn mặt và so sánh với ảnh đã đăng ký. Ảnh mẫu được xử lý lại khi đổi model.</p>
       <a className="button-link" href="#people">{'M\u1edf h\u1ed3 s\u01a1 khu\u00f4n m\u1eb7t \u0111\u1ec3 t\u1ea3i \u1ea3nh'}</a>
       <strong>{status?.state === 'READY' ? 'Sẵn sàng so sánh' :
         status?.state === 'NO_REFERENCE_IMAGES' ? 'Cần ảnh đăng ký có một khuôn mặt rõ' :
@@ -54,7 +54,7 @@ export function ModelsPanel() {
     <PersonModelsPanel />
     <details onToggle={event => setAdvanced(event.currentTarget.open)}>
       <summary>Cấu hình pipeline nâng cao</summary>
-      <p>YOLO/SCRFD/AdaFace là pipeline tùy chỉnh riêng. Luồng so sánh YuNet + SFace phía trên không yêu cầu cấu hình này.</p>
+      <p>Quản lý phiên bản, kiểm tra runtime và gán model cho từng bước xử lý.</p>
       {advanced && <AdvancedModelsPanel />}
     </details>
   </section>;

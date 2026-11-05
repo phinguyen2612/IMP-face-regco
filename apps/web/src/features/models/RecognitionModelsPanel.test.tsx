@@ -4,6 +4,13 @@ import {ModelsPanel} from './ModelsPanel';
 
 afterEach(() => {cleanup(); vi.unstubAllGlobals();});
 
+it('shows the active registry model names', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({state:'READY', model_names:['RetinaFace MobileNet 0.25','AdaFace'], images:[]})));
+  render(<ModelsPanel />);
+  expect(await screen.findByRole('heading', {name:'RetinaFace MobileNet 0.25 + AdaFace'})).toBeTruthy();
+  expect(screen.queryByRole('heading', {name:'YuNet + SFace'})).toBeNull();
+});
+
 it('does not invent zero reference counts while the service is processing', async()=> {
   vi.stubGlobal('fetch',vi.fn(async()=>Response.json({state:'PROCESSING',model_names:['YuNet','SFace']})));
   render(<ModelsPanel />);

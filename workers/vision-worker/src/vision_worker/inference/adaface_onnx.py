@@ -35,8 +35,10 @@ class AdaFaceOnnxEmbedder:
             raise AdaFaceContractError("INVALID_TENSOR_CONTRACT")
         pre = manifest.preprocessing
         if (
-            pre.layout != "NCHW" or pre.color_order != "BGR"
-            or pre.normalization != "adaface_v1" or pre.resize_mode != "aligned"
+            pre.layout != "NCHW"
+            or pre.color_order not in {"BGR", "RGB"}
+            or pre.normalization != "adaface_v1"
+            or pre.resize_mode != "aligned"
         ):
             raise AdaFaceContractError("UNSUPPORTED_PREPROCESSING")
         input_spec, output_spec = manifest.inputs[0], manifest.outputs[0]
@@ -44,12 +46,15 @@ class AdaFaceOnnxEmbedder:
             raise AdaFaceContractError("UNSUPPORTED_INPUT_CONTRACT")
         dimension = manifest.metadata["embedding_dimension"]
         if (
-            isinstance(dimension, bool) or not isinstance(dimension, int)
-            or dimension <= 0 or output_spec.dtype != "float32"
+            isinstance(dimension, bool)
+            or not isinstance(dimension, int)
+            or dimension <= 0
+            or output_spec.dtype != "float32"
             or output_spec.shape != [1, dimension]
         ):
             raise AdaFaceContractError("INVALID_EMBEDDING_DIMENSION")
         self.embedding_dimension = dimension
+        self._color_order = pre.color_order
         self._session = session
         self._np = import_module("numpy")
         self.attempts = 0
@@ -63,11 +68,13 @@ class AdaFaceOnnxEmbedder:
     def preprocess(self, aligned: AlignedFace) -> Any:
         pixels = self._np.asarray(aligned.pixels)
         if (
-            aligned.width != 112 or aligned.height != 112
-            or pixels.shape != (112, 112, 3) or pixels.dtype != self._np.uint8
+            aligned.width != 112
+            or aligned.height != 112
+            or pixels.shape != (112, 112, 3)
+            or pixels.dtype != self._np.uint8
         ):
             raise AdaFaceContractError("INVALID_ALIGNED_FACE")
-        bgr = pixels[:, :, ::-1]
+        bgr = pixels[:, :, ::-1] if self._color_order == "BGR" else pixels
         return self._np.ascontiguousarray(
             (bgr.astype(self._np.float32) / 127.5 - 1).transpose(2, 0, 1)[None]
         )
@@ -126,7 +133,10 @@ class AdaFaceOnnxEmbedder:
                 self.last_preprocess_ms, self.last_inference_ms = pre_ms, infer_ms
                 self.last_postprocess_ms = post_ms
                 self._thread_timings.value = ModelStageTimings(
-                    pre_ms, infer_ms, post_ms, failed_stage,
+                    pre_ms,
+                    infer_ms,
+                    post_ms,
+                    failed_stage,
                 )
                 self.last_total_ms = (perf_counter() - started) * 1000
         return results

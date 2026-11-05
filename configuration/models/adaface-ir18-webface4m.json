@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "model_type": "FACE_EMBEDDER",
+  "inputs": [
+    {
+      "name": "input",
+      "shape": [
+        1,
+        3,
+        112,
+        112
+      ],
+      "dtype": "float32"
+    }
+  ],
+  "outputs": [
+    {
+      "name": "embedding",
+      "shape": [
+        1,
+        512
+      ],
+      "dtype": "float32"
+    }
+  ],
+  "preprocessing": {
+    "layout": "NCHW",
+    "color_order": "RGB",
+    "normalization": "adaface_v1",
+    "resize_mode": "aligned"
+  },
+  "metadata": {
+    "architecture": "ADAFACE",
+    "backbone": "ir18",
+    "embedding_dimension": 512,
+    "l2_normalized": true,
+    "distance_metric": "cosine",
+    "alignment_profile": "arcface_5point_112",
+    "source_profile": "cvlface_rgb_webface4m"
+  },
+  "runtime_compatibility": [
+    "ONNX_CPU"
+  ]
+}

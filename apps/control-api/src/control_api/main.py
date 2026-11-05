@@ -230,8 +230,18 @@ def create_app(
         if model_objects is not None:
             object_storage_health_checks.append(model_objects)
     face_registry = face_registry_service or build_face_registry(face_objects)
-    face_comparison = face_comparison_service or RegisteredFaceComparison(face_registry)
     models = model_registry_service or build_model_registry(model_objects)
+    face_engine = os.getenv("FR_SIMPLE_FACE_ENGINE", "opencv")
+    if face_engine not in {"opencv", "registry"}:
+        raise ValueError("UNSUPPORTED_FACE_ENGINE")
+    if face_comparison_service is not None:
+        face_comparison = face_comparison_service
+    elif face_engine == "registry":
+        from control_api.managed_face_models import ManagedFaceModels
+
+        face_comparison = RegisteredFaceComparison(face_registry, ManagedFaceModels(models))
+    else:
+        face_comparison = RegisteredFaceComparison(face_registry)
     vector_index = vector_index_service
     if vector_index is None and os.getenv("FR_POSTGRES_DSN"):
         from control_api.camera_postgres import connect_persistent_postgres
@@ -253,6 +263,9 @@ def create_app(
     app.state.vector_index = vector_index
 
     def close_owned_resources() -> None:
+        close_comparison = getattr(face_comparison, "close", None)
+        if face_comparison_service is None and callable(close_comparison):
+            close_comparison()
         recognition_events.close()
         if model_registry_service is None:
             connection = getattr(models.repository, "_connection", None)

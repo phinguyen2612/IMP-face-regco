@@ -7,7 +7,7 @@ const stateLabels: Record<string, string> = {
   WAITING_FOR_FRAME: 'Đang chờ hình camera để so sánh…',
   NO_REFERENCE_IMAGES: 'Chưa có ảnh đăng ký dùng được. Thêm ảnh rõ một khuôn mặt ở phần hồ sơ.',
   RECOGNITION_BUSY: 'Đang xử lý khuôn mặt…',
-  MODELS_MISSING: 'Chưa tải đủ model YuNet và SFace.',
+  MODELS_MISSING: 'Chưa tải đủ model nhận diện khuôn mặt.',
 };
 
 export function CameraRecognition({camera, roiPolygon, onRoiChange, roiEditing = false, compact = false}: {
@@ -25,6 +25,7 @@ export function CameraRecognition({camera, roiPolygon, onRoiChange, roiEditing =
     let timer: ReturnType<typeof setTimeout> | undefined;
     let expiry: ReturnType<typeof setTimeout> | undefined;
     let controller: AbortController | null = null;
+    let streamSession: string | undefined;
     async function poll() {
       if (disposed) return;
       if (document.visibilityState === 'hidden') {
@@ -37,6 +38,17 @@ export function CameraRecognition({camera, roiPolygon, onRoiChange, roiEditing =
       try {
         const next = await recognizeCamera(camera.id, camera.revision, controller.signal, true);
         if (!disposed) {
+          // Busy is not a new detection. Preserve the matched frame only until
+          // its original deadline; a busy reply must never extend freshness.
+          if (next.state === 'RECOGNITION_BUSY') {
+            if (streamSession && next.stream_session_id && streamSession !== next.stream_session_id) {
+              clearTimeout(expiry);
+              setResult(null);
+              streamSession = next.stream_session_id;
+            }
+            return;
+          }
+          streamSession = next.stream_session_id;
           clearTimeout(expiry);
           setResult(next); setError(null);
           if (next.preview) expiry = setTimeout(() => setResult(null), Math.min(2500, Math.max(1, next.preview_remaining_ms ?? 2500)));
@@ -62,7 +74,7 @@ export function CameraRecognition({camera, roiPolygon, onRoiChange, roiEditing =
     {compact && (result?.alerts ?? []).length > 0 && <div className="stranger-alert" role="alert">Cảnh báo người lạ · đã đủ {result?.unknown_alert_frames ?? 5} frame liên tiếp</div>}
     {error ? <p role="status">{error}</p> : !result ? <p>Đang so sánh…</p> : <>
       {(result.preview) && <figure className="detection-preview" style={compact ? {'--frame-ratio': frameRatio} as CSSProperties : undefined}>
-        <div className="detection-frame" key={`${result.stream_session_id}/${result.frame_id}`}>
+        <div className="detection-frame">
           <img src={result.preview} alt={`Camera nhận diện ${camera.name}`} onLoad={compact ? event => {const img = event.currentTarget; if (img.naturalHeight) setFrameRatio(img.naturalWidth / img.naturalHeight);} : undefined}/>
           {(roiEditing || (roiPolygon && roiPolygon.length > 0)) && <svg className={`roi-overlay ${roiEditing ? 'editing' : ''}`} viewBox="0 0 1000 1000" preserveAspectRatio="none"
             onClick={event => {

@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "model_type": "FACE_DETECTOR",
+  "inputs": [
+    {
+      "name": "input",
+      "shape": [
+        1,
+        3,
+        640,
+        640
+      ],
+      "dtype": "float32"
+    }
+  ],
+  "outputs": [
+    {
+      "name": "loc",
+      "shape": [
+        1,
+        16800,
+        4
+      ],
+      "dtype": "float32"
+    },
+    {
+      "name": "conf",
+      "shape": [
+        1,
+        16800,
+        2
+      ],
+      "dtype": "float32"
+    },
+    {
+      "name": "landmarks",
+      "shape": [
+        1,
+        16800,
+        10
+      ],
+      "dtype": "float32"
+    }
+  ],
+  "preprocessing": {
+    "layout": "NCHW",
+    "color_order": "BGR",
+    "normalization": "retinaface_bgr_mean_104_117_123",
+    "resize_mode": "letterbox"
+  },
+  "metadata": {
+    "architecture": "RETINAFACE",
+    "backbone": "mobilenet0.25",
+    "output_semantics": "retinaface_loc_conf_landmarks",
+    "landmark_points": 5,
+    "min_sizes": [
+      [
+        16,
+        32
+      ],
+      [
+        64,
+        128
+      ],
+      [
+        256,
+        512
+      ]
+    ],
+    "steps": [
+      8,
+      16,
+      32
+    ],
+    "variance": [
+      0.1,
+      0.2
+    ],
+    "confidence_threshold": 0.6,
+    "iou_threshold": 0.4
+  },
+  "runtime_compatibility": [
+    "ONNX_CPU"
+  ]
+}

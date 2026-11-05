@@ -325,7 +325,7 @@ export function CameraPanel({ runtimeStatuses }: CameraPanelProps) {
                     {runtime.person_detector_runtime?.latest_latency_ms != null ? ` · model ${runtime.person_detector_runtime.latest_latency_ms.toFixed(0)} ms` : ""}
                   </p>}
                   {runtime?.error_category && runtime.error_category !== "PERSON_DETECTOR_NOT_CONFIGURED" && <p>Error: {runtime.error_category}</p>}
-                  {runtime?.error_category === "PERSON_DETECTOR_NOT_CONFIGURED" && <p>Nguồn hình đang cấp cho bộ so sánh YuNet + SFace bên dưới.</p>}
+                  {runtime?.error_category === "PERSON_DETECTOR_NOT_CONFIGURED" && <p>Nguồn hình đang cấp cho bộ so sánh khuôn mặt đang kích hoạt.</p>}
                   </details>
                   <div className="camera-actions">
                     {camera.source_type !== 'webcam' && (!camera.enabled || camera.lifecycle !== 'ACTIVE') &&

@@ -14,7 +14,7 @@ from io import BytesIO
 from pathlib import Path
 from threading import Lock
 from time import monotonic
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 from PIL import Image
 
@@ -277,9 +277,17 @@ class FaceVerifier:
         return "UNKNOWN" if all(value is None for value in identities) else "UNCERTAIN"
 
 
+class FaceModelBackend(Protocol):
+    def load(self) -> None: ...
+    def status(self) -> dict[str, object]: ...
+    def analyze(
+        self, payload: bytes, roi_polygon: list[tuple[float, float]] | None = None
+    ) -> list[FaceSample]: ...
+
+
 class RegisteredFaceComparison:
     def __init__(
-        self, registry: FaceRegistryService, models: OpenCvFaceModels | None = None
+        self, registry: FaceRegistryService, models: FaceModelBackend | None = None
     ) -> None:
         self.registry = registry
         self.models = models or OpenCvFaceModels()
@@ -288,6 +296,7 @@ class RegisteredFaceComparison:
         self._people: dict[str, PersonPublic] = {}
         self._signature = ""
         self._gallery_valid = False
+        self._model_revision = ""
         self._checked = float("-inf")
         self._image_results: list[dict[str, str]] = []
         self._cached: dict[str, tuple[str, float, dict[str, object]]] = {}
@@ -302,6 +311,10 @@ class RegisteredFaceComparison:
             self._checked = float("-inf")
             self._gallery_valid = False
         self.models.load()
+        model_revision = str(getattr(self.models, "compatibility_key", "opencv-yunet-sface-v1"))
+        if model_revision != self._model_revision:
+            self._gallery_valid = False
+            self._cached.clear()
         if not force and self._gallery_valid and monotonic() - self._checked < 5:
             return
         self._checked = float("-inf")
@@ -318,11 +331,14 @@ class RegisteredFaceComparison:
             ]
             references.extend((person, image) for image in approved_images[-5:])
         signature = sha256(
-            repr(
-                [
-                    (p.id, p.updated_at.isoformat(), im.public.id, im.checksum)
-                    for p, im in references
-                ]
+            (
+                model_revision
+                + repr(
+                    [
+                        (p.id, p.updated_at.isoformat(), im.public.id, im.checksum)
+                        for p, im in references
+                    ]
+                )
             ).encode()
         ).hexdigest()
         if signature == self._signature and self._gallery_valid and not force:
@@ -356,6 +372,7 @@ class RegisteredFaceComparison:
         self._people = {person.id: person for person in people}
         self._signature = signature
         self._gallery_valid = True
+        self._model_revision = model_revision
         self._cached.clear()
         self._verifier = FaceVerifier(
             self.profile["minimum_observations"], self.profile["window_seconds"]
@@ -365,7 +382,7 @@ class RegisteredFaceComparison:
 
     def status(self, force: bool = False) -> dict[str, object]:
         if not self._lock.acquire(blocking=False):
-            return {"state": "PROCESSING", "model_names": ["YuNet", "SFace"]}
+            return {"state": "PROCESSING"}
         try:
             try:
                 self._refresh(force)
@@ -378,7 +395,7 @@ class RegisteredFaceComparison:
                 "reference_images": len(self._gallery),
                 "images": self._image_results,
                 "comparison": self.profile,
-                "engine": "opencv-yunet-sface-v1",
+                "engine": self.models.status().get("profile", "opencv-yunet-sface-v1"),
                 "reference_revision": self._signature,
             }
         finally:
@@ -419,7 +436,7 @@ class RegisteredFaceComparison:
                         for face in faces
                     ],
                     "frame_id": frame_id,
-                    "engine": "opencv-yunet-sface-v1",
+                    "engine": self.models.status().get("profile", "opencv-yunet-sface-v1"),
                     "reference_revision": self._signature,
                 }
                 if len(self._cached) >= 16 and scope not in self._cached:
@@ -466,7 +483,7 @@ class RegisteredFaceComparison:
                 "state": "READY" if faces else "NO_FACE",
                 "faces": results,
                 "frame_id": frame_id,
-                "engine": "opencv-yunet-sface-v1",
+                "engine": self.models.status().get("profile", "opencv-yunet-sface-v1"),
                 "reference_revision": self._signature,
             }
             if len(self._cached) >= 16 and scope not in self._cached:
@@ -479,3 +496,9 @@ class RegisteredFaceComparison:
             raise
         finally:
             self._lock.release()
+
+    def close(self) -> None:
+        with self._lock:
+            close = getattr(self.models, "close", None)
+            if callable(close):
+                close()

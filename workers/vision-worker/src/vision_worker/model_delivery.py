@@ -17,6 +17,7 @@ from fr_domain.model_management import DeploymentBackend, ModelManifest, ModelTy
 from vision_worker.inference.adaface_onnx import AdaFaceContractError, AdaFaceOnnxEmbedder
 from vision_worker.inference.interfaces import BoundingBox, FaceDetection, ModelStageTimings
 from vision_worker.inference.onnx_session import OnnxInferenceSession, OnnxSessionError
+from vision_worker.inference.retinaface_onnx import RetinaFaceContractError, RetinaFaceOnnxDetector
 from vision_worker.inference.scrfd_onnx import ScrfdContractError, ScrfdOnnxDetector
 from vision_worker.inference.yolo_onnx import YoloContractError, YoloOnnxDetector
 from vision_worker.model_runtime import (
@@ -161,14 +162,19 @@ class PreparedYoloDetector:
         )
 
 
-class PreparedScrfdDetector:
+class PreparedFaceDetector:
     adapter_kind = "scrfd_onnx"
     model_type = ModelType.FACE_DETECTOR
 
-    def __init__(self, deployment: PendingModelDeployment, detector: ScrfdOnnxDetector) -> None:
+    def __init__(
+        self,
+        deployment: PendingModelDeployment,
+        detector: ScrfdOnnxDetector | RetinaFaceOnnxDetector,
+    ) -> None:
         self.deployment_id = deployment.deployment_id
         self.model_version_id = deployment.model_version_id
         self._detector = detector
+        self.adapter_kind = detector.adapter_kind
 
     def detect(self, person_crops: Sequence[Any]) -> list[list[FaceDetection]]:
         return self._detector.detect(person_crops)
@@ -189,6 +195,10 @@ class PreparedScrfdDetector:
     @property
     def execution_provider(self) -> str:
         return self._detector.execution_provider
+
+
+# Kept for callers importing the former SCRFD-specific wrapper.
+PreparedScrfdDetector = PreparedFaceDetector
 
 
 class PreparedAdaFaceEmbedder:
@@ -250,12 +260,15 @@ class ProductionAdapterFactory:
             deployment.manifest,
             resolved.execution_provider,
         )
-        adapter: YoloOnnxDetector | ScrfdOnnxDetector | AdaFaceOnnxEmbedder
+        adapter: YoloOnnxDetector | ScrfdOnnxDetector | RetinaFaceOnnxDetector | AdaFaceOnnxEmbedder
         try:
             if deployment.model_type is ModelType.PERSON_DETECTOR:
                 adapter = YoloOnnxDetector(session, deployment.manifest)
             elif deployment.model_type is ModelType.FACE_DETECTOR:
-                adapter = ScrfdOnnxDetector(session, deployment.manifest)
+                if deployment.manifest.metadata.get("architecture") == "RETINAFACE":
+                    adapter = RetinaFaceOnnxDetector(session, deployment.manifest)
+                else:
+                    adapter = ScrfdOnnxDetector(session, deployment.manifest)
             elif deployment.model_type is ModelType.FACE_EMBEDDER:
                 adapter = AdaFaceOnnxEmbedder(session, deployment.manifest)
             else:
@@ -267,8 +280,8 @@ class ProductionAdapterFactory:
             return PreparedYoloDetector(
                 deployment.deployment_id, deployment.version, deployment.artifact_checksum, adapter
             )
-        if isinstance(adapter, ScrfdOnnxDetector):
-            return PreparedScrfdDetector(deployment, adapter)
+        if isinstance(adapter, (ScrfdOnnxDetector, RetinaFaceOnnxDetector)):
+            return PreparedFaceDetector(deployment, adapter)
         return PreparedAdaFaceEmbedder(deployment, adapter)
 
 
@@ -434,10 +447,10 @@ class ModelDeploymentSynchronizer:
             return runtime
         return None
 
-    def active_face_detector(self) -> PreparedScrfdDetector | None:
+    def active_face_detector(self) -> PreparedFaceDetector | None:
         runtime = self.active_models.active(ModelType.FACE_DETECTOR)
         if (
-            isinstance(runtime, PreparedScrfdDetector)
+            isinstance(runtime, PreparedFaceDetector)
             and runtime.deployment_id in self._assigned_ids
         ):
             return runtime
@@ -512,6 +525,7 @@ class ModelDeploymentSynchronizer:
                 OnnxSessionError,
                 YoloContractError,
                 ScrfdContractError,
+                RetinaFaceContractError,
                 AdaFaceContractError,
             ) as error:
                 if (

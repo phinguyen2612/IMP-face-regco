@@ -1,9 +1,59 @@
 ﻿import {cleanup, render, screen} from '@testing-library/react';
 import {afterEach, expect, it, vi} from 'vitest';
+import {act} from '@testing-library/react';
 import type {CameraPublic} from '../../api/contracts';
 import {CameraRecognition} from './CameraRecognition';
 
-afterEach(() => {cleanup(); vi.unstubAllGlobals();});
+afterEach(() => {cleanup(); vi.useRealTimers(); vi.unstubAllGlobals();});
+
+it('keeps the same image element across processed frames', async () => {
+  vi.useFakeTimers();
+  let frame = 0;
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({state:'READY',
+    frame_id:String(++frame), preview:`data:image/jpeg;base64,frame${frame}`,
+    preview_remaining_ms:2500, faces:[]
+  })));
+  render(<CameraRecognition camera={{id:'cam',name:'Test',revision:'r1',lifecycle:'ACTIVE',enabled:true} as CameraPublic} />);
+  await act(async () => {await vi.advanceTimersByTimeAsync(0);});
+  const image = screen.getByRole('img');
+  await act(async () => {await vi.advanceTimersByTimeAsync(250);});
+  expect(screen.getByRole('img')).toBe(image);
+  expect(image.getAttribute('src')).toContain('frame2');
+});
+
+it('keeps matching frame and boxes during busy replies without extending freshness', async () => {
+  vi.useFakeTimers();
+  let requests = 0;
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json(++requests === 1 ? {
+    state:'READY',frame_id:'one',preview:'data:image/jpeg;base64,one',preview_remaining_ms:1000,
+    faces:[{box:[.1,.2,.3,.4],state:'VERIFIED',full_name:'Test Person',similarity:.9}]
+  } : {state:'RECOGNITION_BUSY',preview:'data:image/jpeg;base64,different',preview_remaining_ms:2500,faces:[]})));
+  render(<CameraRecognition camera={{id:'cam',revision:'r1',lifecycle:'ACTIVE',enabled:true} as CameraPublic} />);
+  await act(async () => {await vi.advanceTimersByTimeAsync(0);});
+  const image = screen.getByRole('img');
+  await act(async () => {await vi.advanceTimersByTimeAsync(800);});
+  expect(screen.getByRole('img')).toBe(image);
+  expect(image.getAttribute('src')).toBe('data:image/jpeg;base64,one');
+  expect(screen.getByTestId('face-detection-box').textContent).toContain('Test Person');
+  await act(async () => {await vi.advanceTimersByTimeAsync(250);});
+  expect(screen.queryByRole('img')).toBeNull();
+  expect(screen.queryByTestId('face-detection-box')).toBeNull();
+});
+
+it('clears the old frame when a busy reply belongs to a new stream session', async () => {
+  vi.useFakeTimers();
+  let requests = 0;
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json(++requests === 1 ? {
+    state:'READY',stream_session_id:'old',preview:'data:image/jpeg;base64,old',preview_remaining_ms:2500,
+    faces:[{box:[.1,.2,.3,.4],state:'VERIFIED',full_name:'Test Person',similarity:.9}]
+  } : {state:'RECOGNITION_BUSY',stream_session_id:'new',faces:[]})));
+  render(<CameraRecognition camera={{id:'cam',revision:'r1',lifecycle:'ACTIVE',enabled:true} as CameraPublic} />);
+  await act(async () => {await vi.advanceTimersByTimeAsync(0);});
+  expect(screen.getByTestId('face-detection-box')).toBeTruthy();
+  await act(async () => {await vi.advanceTimersByTimeAsync(250);});
+  expect(screen.queryByRole('img')).toBeNull();
+  expect(screen.queryByTestId('face-detection-box')).toBeNull();
+});
 
 it('draws face boxes and identity labels on the matching processed frame', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => Response.json({state:'READY',

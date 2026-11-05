@@ -224,6 +224,20 @@ def test_adaface_controlled_onnx_normalizes_and_rejects_invalid_output(tmp_path:
             embedder.postprocess(invalid)
 
 
+def test_adaface_cvlface_rgb_profile_does_not_reverse_channels():
+    manifest = adaface_manifest()
+    profile = manifest.model_copy(
+        update={"preprocessing": manifest.preprocessing.model_copy(update={"color_order": "RGB"})}
+    )
+    pixels = np.zeros((112, 112, 3), dtype=np.uint8)
+    pixels[:, :, 0] = 255
+    aligned = AlignedFace(pixels, 112, 112)
+    rgb = AdaFaceOnnxEmbedder(None, profile).preprocess(aligned)
+    bgr = AdaFaceOnnxEmbedder(None, manifest).preprocess(aligned)
+    assert rgb[0, :, 0, 0].tolist() == [1, -1, -1]
+    assert bgr[0, :, 0, 0].tolist() == [-1, -1, 1]
+
+
 def test_face_model_delivery_supports_roles_and_rejects_wrong_role(tmp_path: Path) -> None:
     _, scrfd_checksum, scrfd_path = scrfd_session(tmp_path)
     _, ada_checksum, ada_path = adaface_session(tmp_path)

@@ -35,14 +35,17 @@ def test_confident_no_match_is_unknown_on_first_valid_observation():
     from control_api.simple_face_recognition import FaceVerifier
 
     verifier = FaceVerifier()
-    assert verifier.observe(
-        "camera/revision/gallery/session",
-        [0.1, 0.1, 0.2, 0.3],
-        None,
-        frame_id="frame-1",
-        now=1.0,
-        immediate_unknown=True,
-    ) == "UNKNOWN"
+    assert (
+        verifier.observe(
+            "camera/revision/gallery/session",
+            [0.1, 0.1, 0.2, 0.3],
+            None,
+            frame_id="frame-1",
+            now=1.0,
+            immediate_unknown=True,
+        )
+        == "UNKNOWN"
+    )
 
 
 def test_face_embeddings_are_only_created_for_faces_inside_the_camera_roi():
@@ -217,6 +220,52 @@ def test_reference_failures_do_not_verify_against_an_old_gallery(tmp_path):
             service.compare(out.getvalue(), "scope", "one")
 
 
+def test_model_change_reembeds_gallery_and_clears_frame_cache(tmp_path):
+    from io import BytesIO
+
+    from control_api.face_image_storage import FaceImageStorage
+    from control_api.face_registry import (
+        FaceRegistryService,
+        InMemoryFaceRegistryRepository,
+        PersonCreate,
+    )
+    from control_api.simple_face_recognition import FaceSample, RegisteredFaceComparison
+    from PIL import Image
+
+    class Models:
+        compatibility_key = "first-space"
+        calls = 0
+
+        def load(self):
+            pass
+
+        def status(self):
+            return {"state": "READY", "profile": "registry-face-models-v1"}
+
+        def analyze(self, payload, roi_polygon=None):
+            self.calls += 1
+            vector = [1, 0] if self.compatibility_key == "first-space" else [0, 1, 0]
+            return [FaceSample([0, 0, 0.2, 0.2], np.asarray(vector, dtype=np.float32))]
+
+    registry = FaceRegistryService(InMemoryFaceRegistryRepository(), FaceImageStorage(tmp_path))
+    person = registry.create_person(PersonCreate(full_name="Synthetic", student_id="TEST"))
+    out = BytesIO()
+    Image.new("RGB", (40, 40), "blue").save(out, format="JPEG")
+    image = registry.save_image(person.id, "sample.jpg", out.getvalue())
+    registry.review_image(image.id, "reviewer", "APPROVE")
+    models = Models()
+    comparison = RegisteredFaceComparison(registry, models)
+    before = comparison.compare(out.getvalue(), "camera", "same-frame")
+    assert models.calls == 2
+    models.compatibility_key = "new-space"
+    after = comparison.compare(out.getvalue(), "camera", "same-frame")
+    assert models.calls == 4
+    assert before["reference_revision"] != after["reference_revision"]
+    assert comparison._gallery[0][2].shape == (3,)
+    assert after["faces"][0]["state"] == "PENDING"
+    assert after["engine"] == "registry-face-models-v1"
+
+
 def test_missing_minio_reference_image_keeps_person_detection_endpoint_available():
     from datetime import UTC, datetime
 
@@ -256,7 +305,7 @@ def test_missing_minio_reference_image_keeps_person_detection_endpoint_available
                 original_filename="legacy.jpg",
                 width=40,
                 height=40,
-                    review_state="APPROVED",
+                review_state="APPROVED",
                 created_at=now,
                 content_url="/private/image-1",
             ),
