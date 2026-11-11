@@ -26,6 +26,12 @@ class PersonModelUpdate(BaseModel):
     confidence: float | None = Field(default=None, ge=0.01, le=1, allow_inf_nan=False)
 
 
+class PersonThresholdVersion(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    version: str = Field(min_length=1, max_length=80)
+    confidence: float = Field(ge=0.01, le=1, allow_inf_nan=False)
+
+
 def _same_runtime_profile(existing: ModelVersion, requested: ModelManifest) -> bool:
     existing_manifest = existing.manifest.model_dump(mode="json")
     requested_manifest = requested.model_dump(mode="json")
@@ -154,6 +160,19 @@ def create_person_model_router(registry: ModelRegistryService) -> APIRouter:
             ) from error
         finally:
             await file.close()
+
+    @router.post("/{version_id}/threshold-versions", status_code=201)
+    def create_threshold_version(
+        version_id: str, request: PersonThresholdVersion,
+    ) -> dict[str, object]:
+        try:
+            return public(registry.create_person_threshold_version(
+                version_id, request.version, request.confidence,
+            ))
+        except KeyError as error:
+            raise HTTPException(404, "PERSON_MODEL_NOT_FOUND") from error
+        except ValueError as error:
+            raise HTTPException(409, str(error)) from error
 
     @router.patch("/{version_id}")
     def update_person_model(version_id: str, request: PersonModelUpdate) -> dict[str, object]:

@@ -4,6 +4,26 @@ import {PersonModelsPanel} from './PersonModelsPanel';
 
 afterEach(() => {cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks();});
 
+it('allows tuning a deployed model by creating a draft without uploading or assigning', async () => {
+  const item = {id:'v1', version:'live-v1', architecture:'YOLO26', input_shape:[1,3,640,640],
+    confidence:0.3, deployments:[{id:'d1',status:'ACTIVE',runtime_state:'ACTIVE'}]};
+  const fetcher = vi.fn(async (_url: string, _init?: RequestInit) => Response.json({items:[item],active_deployment_id:'d1',max_upload_bytes:1024}));
+  vi.stubGlobal('fetch', fetcher);
+  render(<PersonModelsPanel/>);
+  fireEvent.click(await screen.findByRole('button', {name:'Sửa model'}));
+  const form = screen.getByRole('button', {name:'Lưu model'}).closest('form')!;
+  const threshold = within(form).getByLabelText('Ngưỡng phát hiện');
+  expect(threshold.hasAttribute('disabled')).toBe(false);
+  fireEvent.change(threshold, {target:{value:'0.15'}});
+  expect((within(form).getByLabelText('Tên phiên bản') as HTMLInputElement).value).toBe('live-v1-tuned');
+  fireEvent.submit(form);
+  await screen.findByText(/Đã tạo phiên bản ngưỡng mới/);
+  const post = fetcher.mock.calls.find(([,init]) => init?.method === 'POST')!;
+  expect(post[0]).toBe('/api/v1/person-models/v1/threshold-versions');
+  expect(JSON.parse(String(post[1]!.body))).toEqual({version:'live-v1-tuned',confidence:0.15});
+  expect(fetcher.mock.calls.some(([url]) => url.includes('/activate') || url.includes('/model-assignments'))).toBe(false);
+});
+
 it('uploads explicit YOLOX settings as a draft without activating it', async () => {
   const fetcher = vi.fn(async (_url: string, options?: RequestInit) => Response.json(options?.method === 'POST' ? {} : {items: [], max_upload_bytes: 536870912}));
   vi.stubGlobal('fetch', fetcher);

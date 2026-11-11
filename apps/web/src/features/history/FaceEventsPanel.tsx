@@ -10,11 +10,33 @@ export function FaceEventsPanel({cameraId, kind, compact = false, start, end, re
   const [events, setEvents] = useState<FacePresenceEvent[]>([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
-  const [offset, setOffset] = useState(0);
+  const [offset, setOffset] = useState(() => {
+    if (compact || eventId) return 0;
+    const value = Number(new URLSearchParams(window.location.hash.split('?')[1]).get('offset') ?? 0);
+    return Number.isInteger(value) && value >= 0 && value <= 1000000 && value % 50 === 0 ? value : 0;
+  });
+  const filterKey = JSON.stringify([cameraId, kind, start, end]);
+  const previousFilter = useRef(filterKey);
   const selectedEvent = useRef<HTMLElement>(null);
   const focusedId = useRef<string | undefined>(undefined);
+  const restoredScroll = useRef(false);
+  function rememberScroll() {
+    try { sessionStorage.setItem(`event-list-scroll:${window.location.hash}`, String(window.scrollY)); } catch { /* Optional browser preference. */ }
+  }
+  useEffect(() => {
+    if (compact || eventId || loading || error || restoredScroll.current) return;
+    restoredScroll.current = true;
+    try {
+      const key = `event-list-scroll:${window.location.hash}`;
+      const saved = sessionStorage.getItem(key);
+      if (saved !== null && Number.isFinite(Number(saved))) {
+        window.scrollTo({ top: Math.max(0, Number(saved)), behavior: 'instant' });
+        sessionStorage.removeItem(key);
+      }
+    } catch { /* The list still works without storage. */ }
+  }, [compact, eventId, loading, error]);
   function detailsHref(event: FacePresenceEvent) {
-    const params = new URLSearchParams(report ? window.location.hash.split('?')[1] : '');
+    const params = new URLSearchParams(report || window.location.hash.startsWith('#history') ? window.location.hash.split('?')[1] : '');
     params.set('event', event.id);
     return `#${event.kind === 'UNKNOWN_ALERT' ? 'alerts' : 'history'}?${params}`;
   }
@@ -24,7 +46,17 @@ export function FaceEventsPanel({cameraId, kind, compact = false, start, end, re
     selectedEvent.current?.scrollIntoView?.({block: 'center'});
     focusedId.current = eventId;
   }, [eventId, events]);
-  useEffect(() => setOffset(0), [cameraId, kind, start, end]);
+  useEffect(() => {
+    if (previousFilter.current !== filterKey) { previousFilter.current = filterKey; setOffset(0); }
+  }, [filterKey]);
+  useEffect(() => {
+    if (compact || eventId) return;
+    const [page, query] = window.location.hash.split('?');
+    if (page !== '#alerts' && page !== '#history') return;
+    const params = new URLSearchParams(query);
+    if (offset) params.set('offset', String(offset)); else params.delete('offset');
+    window.history.replaceState(null, '', `${page}${params.size ? `?${params}` : ''}`);
+  }, [offset, compact, eventId]);
   useEffect(() => {
     let disposed = false;
     let timer: ReturnType<typeof setTimeout>;
@@ -72,7 +104,7 @@ export function FaceEventsPanel({cameraId, kind, compact = false, start, end, re
         <time dateTime={event.recognized_at}>{new Date(event.recognized_at).toLocaleString('vi-VN', {timeZone: 'Asia/Ho_Chi_Minh'})}</time>
         {eventId && <div className="event-facts"><span>Căn cứ ghi nhận</span><p>{event.kind === 'UNKNOWN_ALERT' ? `${event.consecutive_unknown} frame liên tiếp không khớp ảnh đăng ký.` : 'Khuôn mặt mới xuất hiện trong vùng theo dõi.'}</p><span>Trạng thái ảnh</span><p>{evidenceLabels[event.evidence_status]}</p></div>}
         {!eventId && event.kind === 'UNKNOWN_ALERT' && <p className="event-basis">{event.consecutive_unknown} frame liên tiếp không khớp ảnh đăng ký.</p>}
-        <div className="evidence-actions">{!eventId && <a className="event-detail-link" href={detailsHref(event)}>Xem chi tiết <Icon name="arrow"/></a>}
+        <div className="evidence-actions">{!eventId && <a className="event-detail-link" href={detailsHref(event)} onClick={rememberScroll}>Xem chi tiết <Icon name="arrow"/></a>}
           {event.evidence_status === 'READY' && event.evidence_key && <a className={eventId ? 'button-link' : 'evidence-original-link'} href={`/api/v1/recognition/evidence/${encodeURIComponent(event.evidence_key)}`} target="_blank" rel="noreferrer">Mở ảnh minh chứng</a>}</div>
       </div>
     </article>)}</div>

@@ -4,6 +4,7 @@ import {afterEach, expect, it, vi} from 'vitest';
 import {App} from './App';
 
 const authMocks=vi.hoisted(()=>({getCurrentSession:vi.fn(),signIn:vi.fn(),signOut:vi.fn()}));
+vi.mock('../features/admin/AdminManagement', () => ({AdminManagement: ({page}: {page:string}) => <div>Admin workspace {page}</div>}));
 const roleApiMocks=vi.hoisted(()=>({listTeacherClasses:vi.fn(async()=>[]),listTeacherCameras:vi.fn(async()=>[]),listPendingFaceReviews:vi.fn(async()=>[]),getMyProfile:vi.fn(async()=>({id:'person-1',full_name:'Student One',student_id:'S1',recognition_ready:true})),listMyFaceImages:vi.fn(async()=>[]),listMyAttendance:vi.fn(async()=>[])}));
 vi.mock('../api/auth',()=>authMocks);
 vi.mock('../api/classes',async()=>({...await vi.importActual('../api/classes'),...roleApiMocks}));
@@ -29,6 +30,17 @@ it('opens exact event deep links and updates when another notification on the sa
   expect(await screen.findByText('Selected event: alerts/alert-2')).toBeTruthy();
   act(()=>{window.location.hash='history?event=entry-1';window.dispatchEvent(new HashChangeEvent('hashchange'));});
   expect(await screen.findByText('Selected event: history/entry-1')).toBeTruthy();
+});
+
+it('keeps exactly one page header when switching between account and class management', async () => {
+  window.history.replaceState(null, '', '/#accounts');
+  const user = userEvent.setup(); render(<App/>);
+  await screen.findByRole('heading', {level:1, name:'Tài khoản'});
+  await user.click(screen.getByRole('link', {name:'Lớp học'}));
+  await screen.findByRole('heading', {level:1, name:'Lớp học'});
+  expect(screen.getAllByRole('heading', {level:1})).toHaveLength(1);
+  expect(screen.queryByText('Admin workspace accounts')).toBeNull();
+  expect(screen.getByText('Admin workspace classes')).toBeTruthy();
 });
 
 it('denies event deep links for non-admin accounts', async()=>{

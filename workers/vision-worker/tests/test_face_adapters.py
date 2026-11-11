@@ -27,6 +27,7 @@ from vision_worker.face_recognition.embedding_pipeline import (
 from vision_worker.face_recognition.images import AlignedFace, FaceImageError, crop_person
 from vision_worker.face_recognition.quality import FaceQualityEvaluator, FaceQualityStatus
 from vision_worker.inference.adaface_onnx import AdaFaceContractError, AdaFaceOnnxEmbedder
+from vision_worker.inference.face_slicing import FaceSlicingConfig, slice_crop
 from vision_worker.inference.interfaces import BoundingBox, FaceDetection, FaceLandmarks
 from vision_worker.inference.onnx_session import OnnxInferenceSession
 from vision_worker.inference.scrfd_onnx import ScrfdContractError, ScrfdOnnxDetector
@@ -203,6 +204,116 @@ def test_scrfd_nms_and_malformed_output_are_explicit(tmp_path: Path) -> None:
     outputs[3][0, 0] = np.nan
     with pytest.raises(ScrfdContractError, match="INVALID_MODEL_OUTPUT"):
         detector.postprocess(outputs, 32, 32, 1)
+
+
+def test_scrfd_slicing_recovers_faces_and_preserves_parent_coordinates(tmp_path: Path) -> None:
+    session, _, _ = scrfd_session(tmp_path)
+    manifest = scrfd_manifest()
+    manifest.metadata["sliced_inference"] = {
+        "enabled": True, "tile_width": 32, "tile_height": 32,
+    }
+    detector = ScrfdOnnxDetector(session, manifest)
+    frame = replace(face_frame(), width=100, height=120, payload=bytes(100 * 120 * 3))
+    crop = crop_person(frame, BoundingBox(10, 20, 90, 100, 1))
+    calls = []
+
+    def run(inputs):
+        calls.append(inputs)
+        outputs = scrfd_arrays()
+        if len(calls) == 1:  # standard pass loses the small faces
+            outputs[0][:] = 0
+        return outputs
+
+    session.run = run
+    faces = detector.detect([crop])[0]
+    assert len(calls) == 10  # standard pass + 3 x 3 overlapping tiles
+    assert len(faces) == 9
+    assert faces[-1].box == BoundingBox(48, 48, 56, 56, pytest.approx(0.95))
+    assert faces[-1].landmarks.left_eye == (50, 50)
+    assert detector.attempts == detector.successes == 1
+    assert detector.no_face_count == 0
+    assert detector.timings().inference_ms is not None
+    tile = slice_crop(crop, (48, 48, 80, 80))
+    assert tile.frame is frame
+    assert (tile.left, tile.top) == (58, 68)
+    assert np.shares_memory(tile.pixels, crop.pixels)
+
+
+def test_scrfd_slicing_suppresses_duplicates_and_propagates_tile_failures(tmp_path: Path) -> None:
+    session, _, _ = scrfd_session(tmp_path)
+    manifest = scrfd_manifest()
+    manifest.metadata["sliced_inference"] = {
+        "enabled": True, "tile_width": 32, "tile_height": 32,
+    }
+    detector = ScrfdOnnxDetector(session, manifest)
+    frame = replace(face_frame(), width=80, height=80, payload=bytes(80 * 80 * 3))
+    crop = crop_person(frame, BoundingBox(0, 0, 80, 80, 1))
+    calls = 0
+
+    def run(inputs):
+        nonlocal calls
+        calls += 1
+        outputs = scrfd_arrays()
+        if calls == 2:
+            outputs[0][0, 0] = 0.9
+            outputs[3][0] *= 2.5  # same 20px box as the full 80 -> 32 pass
+        elif calls > 2:
+            outputs[0][:] = 0
+        return outputs
+
+    session.run = run
+    assert len(detector.detect([crop])[0]) == 1
+
+    calls = 0
+
+    def broken_run(inputs):
+        nonlocal calls
+        calls += 1
+        if calls > 1:
+            raise RuntimeError("TILE_INFERENCE_FAILED")
+        return scrfd_arrays()
+
+    session.run = broken_run
+    with pytest.raises(RuntimeError, match="TILE_INFERENCE_FAILED"):
+        detector.detect([crop])
+    assert detector.failures == 1
+    assert detector.no_face_count == 0
+    assert detector.timings().failed_stage == "inference"
+
+    def empty_run(inputs):
+        outputs = scrfd_arrays()
+        outputs[0][:] = 0
+        return outputs
+
+    session.run = empty_run
+    assert detector.detect([crop]) == [[]]
+    assert detector.no_face_count == 1
+
+
+def test_face_slicing_grid_covers_edges_and_respects_budget() -> None:
+    config = FaceSlicingConfig.from_metadata({"enabled": True, "max_tiles": 4})
+    windows = config.windows(3840, 2160)
+    assert 1 < len(windows) <= 4
+    assert min(w[0] for w in windows) == min(w[1] for w in windows) == 0
+    assert max(w[2] for w in windows) == 3840
+    assert max(w[3] for w in windows) == 2160
+    assert all(0 <= x1 < x2 <= 3840 and 0 <= y1 < y2 <= 2160
+               for x1, y1, x2, y2 in windows)
+    assert config.windows(320, 480) == []
+    assert FaceSlicingConfig().windows(3840, 2160) == []
+
+
+@pytest.mark.parametrize("settings", [
+    None, [], {"enabled": 1}, {"tile_width": True}, {"tile_height": 0},
+    {"overlap_ratio": float("nan")}, {"overlap_ratio": 0.6},
+    {"overlap_ratio": "0.2"}, {"max_tiles": 0}, {"max_tiles": 65}, {"typo": True},
+])
+def test_scrfd_rejects_invalid_slicing_configuration(tmp_path: Path, settings) -> None:
+    session, _, _ = scrfd_session(tmp_path)
+    manifest = scrfd_manifest()
+    manifest.metadata["sliced_inference"] = settings
+    with pytest.raises(ScrfdContractError, match="INVALID_FACE_SLICING_CONFIG"):
+        ScrfdOnnxDetector(session, manifest)
 
 
 def test_adaface_controlled_onnx_normalizes_and_rejects_invalid_output(tmp_path: Path) -> None:

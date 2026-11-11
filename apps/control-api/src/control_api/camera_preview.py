@@ -178,7 +178,7 @@ def create_camera_preview_router(
     ) -> Response:
         if worker_token is None or x_worker_token != worker_token:
             raise HTTPException(403, "worker authorization required")
-        require(camera_id, revision)
+        await run_in_threadpool(require, camera_id, revision)
         try:
             import json
 
@@ -194,7 +194,7 @@ def create_camera_preview_router(
             payload.extend(chunk)
         frame = bytes(payload)
         await run_in_threadpool(validate_preview, frame)
-        require(camera_id, revision)
+        await run_in_threadpool(require, camera_id, revision)
         ended_tracks = store.put(
             camera_id, revision, frame, x_preview_session, persons, x_person_deployment
         )

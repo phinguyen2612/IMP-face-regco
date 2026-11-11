@@ -54,6 +54,15 @@ export function updatePersonModel(id: string, version: string, confidence?: numb
   return managePersonModel(id, 'PATCH', {version, ...(confidence !== undefined ? {confidence} : {})});
 }
 
+export async function createPersonThresholdVersion(id: string, version: string, confidence: number): Promise<void> {
+  const response = await apiFetch(`/api/v1/person-models/${encodeURIComponent(id)}/threshold-versions`, {
+    method: 'POST', body: JSON.stringify({version, confidence}),
+  });
+  if (response.ok) return;
+  const body = await response.json().catch(() => ({}));
+  throw new Error(personModelErrors[body.detail] ?? 'Không tạo được phiên bản ngưỡng mới. Kiểm tra tên phiên bản và ngưỡng từ 0.01 đến 1.');
+}
+
 export function deletePersonModel(id: string): Promise<void> {
   return managePersonModel(id, 'DELETE');
 }

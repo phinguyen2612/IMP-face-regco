@@ -2,7 +2,7 @@ import {cleanup, render, screen} from '@testing-library/react';
 import {afterEach, expect, it, vi} from 'vitest';
 import {FaceEventsPanel} from './FaceEventsPanel';
 
-afterEach(() => {cleanup(); vi.unstubAllGlobals();});
+afterEach(() => {cleanup(); vi.unstubAllGlobals(); window.history.replaceState(null, '', '/');});
 
 it('shows persisted entry crops and stranger alerts with separate evidence states', async () => {
   const fetch = vi.fn(async (_input: RequestInfo | URL) => Response.json([
@@ -35,4 +35,15 @@ it('explains when a linked event is unavailable', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => Response.json([])));
   render(<FaceEventsPanel eventId="missing"/>);
   expect(await screen.findByText('Không tìm thấy sự kiện này hoặc sự kiện không còn khả dụng.')).toBeTruthy();
+});
+
+it('restores the evidence page offset from the URL', async () => {
+  window.history.replaceState(null, '', '/#alerts?camera=door&offset=100');
+  const fetcher = vi.fn(async (_input: RequestInfo | URL) => Response.json([]));
+  vi.stubGlobal('fetch', fetcher);
+  render(<FaceEventsPanel cameraId="door" report/>);
+  await screen.findByText('Chưa có evidence người lạ trong bộ lọc đã chọn.');
+  expect(String(fetcher.mock.calls[0]?.[0])).toContain('offset=100');
+  expect(window.location.hash).toContain('camera=door');
+  expect(window.location.hash).toContain('offset=100');
 });

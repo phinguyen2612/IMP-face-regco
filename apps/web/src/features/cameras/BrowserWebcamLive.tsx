@@ -110,7 +110,7 @@ export function BrowserWebcamLive({ camera }: { camera: CameraPublic }) {
           if (request !== generation.current) return;
           stop();
           setError(reason instanceof DOMException && reason.name === 'AbortError'
-            ? 'Máy chủ không nhận được khung hình trong 8 giây. Kiểm tra kết nối rồi bắt đầu lại.'
+            ? 'Máy chủ chưa phản hồi việc gửi khung hình sau 8 giây. Máy chủ có thể đang bận hoặc kết nối bị chậm. Hãy bắt đầu lại.'
             : reason instanceof Error ? reason.message : "Kết nối webcam bị gián đoạn. Hãy bắt đầu lại.");
         }
       };

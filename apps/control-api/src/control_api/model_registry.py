@@ -361,6 +361,32 @@ class ModelRegistryService:
         self.repository.put_version(updated)
         return updated
 
+    def create_person_threshold_version(
+        self, version_id: str, label: str, confidence: float
+    ) -> ModelVersion:
+        source = self.get_version(version_id)
+        if source.manifest.model_type is not ModelType.PERSON_DETECTOR:
+            raise KeyError(version_id)
+        label = label.strip()
+        if not label or len(label) > 80:
+            raise ValueError("INVALID_VERSION_LABEL")
+        if not 0.01 <= confidence <= 1:
+            raise ValueError("INVALID_CONFIDENCE")
+        if any(v.version == label for v in self.list_versions(source.model_definition_id)):
+            raise ValueError("MODEL_VERSION_EXISTS")
+        if source.validation_status is not ValidationStatus.VALID:
+            raise ValueError("MODEL_VERSION_NOT_VALID")
+        data = source.manifest.model_dump(mode="json")
+        data["metadata"]["confidence_threshold"] = confidence
+        draft = replace(
+            source, id=str(uuid4()), version=label,
+            manifest=ModelManifest.model_validate(data), created_at=datetime.now(UTC).isoformat(),
+        )
+        # Thresholds do not alter the validated ONNX tensor contract. Reuse its
+        # artifact; the new version still needs deployment warmup before assignment.
+        self.repository.put_version(draft)
+        return draft
+
     def list_deployments(self) -> list[ModelDeployment]:
         return self.repository.list_deployments()
 

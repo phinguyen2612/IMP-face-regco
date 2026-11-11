@@ -3,6 +3,8 @@ import {listCameras} from '../../api/client';
 import type {CameraPublic, RuntimeStatus} from '../../api/contracts';
 import {CameraRecognition} from '../cameras/CameraRecognition';
 import {BrowserWebcamLive} from '../cameras/BrowserWebcamLive';
+import {StatusBadge} from '../../ui/StatusBadge';
+import {DataState} from '../../ui/DataState';
 import {cameraRuntimeLabel} from './MonitoringPage';
 
 const selectionKey = 'livewall-cameras';
@@ -86,7 +88,7 @@ export function LivewallPage({statuses}: {statuses: RuntimeStatus[]}) {
     </div>
     {fullscreenError && <p role="alert" className="form-error">{fullscreenError}</p>}
     {error && <p role="alert" className="form-error">{error}</p>}
-    {loading ? <p role="status">Đang tải camera…</p> : cameras.length === 0 ? !error && <article className="empty-state"><h2>Chưa có camera để quan sát</h2><p>Thêm camera và áp dụng cấu hình để đưa hình lên Livewall.</p><a className="primary-action" href="#cameras">Thiết lập camera</a></article> : <>
+    {loading ? <DataState loading title="Đang tải camera…"/> : cameras.length === 0 ? !error && <article className="empty-state"><h2>Chưa có camera để quan sát</h2><p>Thêm camera và áp dụng cấu hình để đưa hình lên Livewall.</p><a className="primary-action" href="#cameras">Thiết lập camera</a></article> : <>
       <details className="livewall-picker" open={visible.length === 0}>
         <summary>Chọn camera hiển thị ({visible.length}/9)</summary>
         <p className="field-hint">Bỏ chọn chỉ đóng ô xem. Camera do worker xử lý vẫn tiếp tục chạy. Webcam trình duyệt sẽ dừng gửi hình khi đóng ô hoặc rời trang.</p>
@@ -101,10 +103,10 @@ export function LivewallPage({statuses}: {statuses: RuntimeStatus[]}) {
           const runtime = statuses.find(item => item.camera_id === camera.id);
           return <article className="livewall-tile" key={camera.id} hidden={focused !== null && focused !== camera.id} aria-label={`Ô camera ${camera.name}`}>
             <header><h2>{camera.name}</h2><button className="secondary-button" aria-label={`${focused === camera.id ? 'Thu nhỏ' : 'Phóng lớn'} ${camera.name}`} onClick={() => setFocused(focused === camera.id ? null : camera.id)}>{focused === camera.id ? 'Thu nhỏ' : 'Phóng lớn'}</button></header>
-            <div className="livewall-status"><span>{cameraRuntimeLabel(camera, runtime)}</span><small>{runtime?.last_frame_at ? `Hình gần nhất ${new Date(runtime.last_frame_at).toLocaleTimeString('vi-VN')}` : 'Chưa có thời gian nhận hình'}</small></div>
+            <div className="livewall-status"><StatusBadge tone={cameraRuntimeLabel(camera, runtime) === "Đang nhận hình" ? "success" : "neutral"}>{cameraRuntimeLabel(camera, runtime)}</StatusBadge><small>{runtime?.last_frame_at ? `Hình gần nhất ${new Date(runtime.last_frame_at).toLocaleTimeString('vi-VN', {timeZone:'Asia/Ho_Chi_Minh'})}` : 'Chưa có thời gian nhận hình'}</small></div>
             <div className="livewall-feed"><CameraRecognition camera={camera} compact roiPolygon={camera.roi_polygon}/></div>
             {camera.source_type === 'webcam' && camera.enabled && camera.lifecycle === 'ACTIVE' && <details className="livewall-webcam"><summary>Mở nguồn webcam trình duyệt</summary><BrowserWebcamLive camera={camera}/></details>}
-            <footer><span>{runtime && runtime.last_frame_at && Date.now() - Date.parse(runtime.last_frame_at) < 15000 ? `${runtime.processed_fps.toFixed(1)} FPS xử lý` : 'Chưa có tốc độ xử lý mới'}</span><a href="#monitoring" onClick={() => sessionStorage.setItem('monitor-camera', camera.id)}>Xem chi tiết →</a></footer>
+            <footer><span>{runtime && runtime.last_frame_at && Date.now() - Date.parse(runtime.last_frame_at) < 15000 ? `${runtime.processed_fps.toFixed(1)} FPS xử lý` : 'Chưa có tốc độ xử lý mới'}</span><a href="#monitoring" onClick={() => {try {sessionStorage.setItem('monitor-camera', camera.id);} catch { /* Navigation still works. */ }}}>Xem chi tiết →</a></footer>
           </article>;
         })}
       </div>

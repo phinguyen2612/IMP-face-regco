@@ -28,6 +28,61 @@ def service(tmp_path: Path) -> ModelRegistryService:
     )
 
 
+def test_threshold_version_preserves_deployed_profile(tmp_path: Path) -> None:
+    registry = service(tmp_path)
+    definition = registry.create_definition("YOLO", ModelType.PERSON_DETECTOR, "ONNX")
+    source = registry.create_version(
+        definition.id, "v1", "model.onnx", b"controlled-onnx", person_manifest(),
+    )
+    deployment = registry.create_deployment(source.id, DeploymentBackend.ONNX_CPU, "FP32")
+    registry.request_activation(deployment.id)
+    registry.record_activation(deployment.id, success=True,
+                               resolved_backend=DeploymentBackend.ONNX_CPU)
+    registry.assign(ModelType.PERSON_DETECTOR, deployment.id)
+    old_profile = source.manifest.model_dump()
+    draft = registry.create_person_threshold_version(source.id, "v1-tuned", 0.15)
+    assert draft.id != source.id
+    assert draft.artifact_id == source.artifact_id
+    assert draft.checksum == source.checksum
+    assert draft.manifest.metadata["confidence_threshold"] == 0.15
+    assert registry.get_version(source.id).manifest.model_dump() == old_profile
+    assert registry.assignments()[ModelType.PERSON_DETECTOR] == deployment.id
+    assert all(item.model_version_id != draft.id for item in registry.list_deployments())
+    assert len(registry.repository.list_artifacts()) == 1
+    with pytest.raises(ValueError, match="MODEL_PROFILE_IMMUTABLE_AFTER_DEPLOYMENT"):
+        registry.update_person_version(source.id, "v1", 0.15)
+    with pytest.raises(ValueError, match="MODEL_VERSION_EXISTS"):
+        registry.create_person_threshold_version(source.id, "v1-tuned", 0.2)
+    registry.delete_version(draft.id)
+    assert b"".join(registry.artifact_content(source.artifact_id)) == b"controlled-onnx"
+
+
+def test_person_threshold_version_api_validates_and_returns_profile(tmp_path: Path) -> None:
+    from control_api.person_model_api import create_person_model_router
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    registry = service(tmp_path)
+    definition = registry.create_definition("YOLO", ModelType.PERSON_DETECTOR, "ONNX")
+    source = registry.create_version(
+        definition.id, "v1", "model.onnx", b"controlled-onnx", person_manifest(),
+    )
+    app = FastAPI()
+    app.include_router(create_person_model_router(registry))
+    client = TestClient(app)
+    endpoint = f"/api/v1/person-models/{source.id}/threshold-versions"
+    for value in (0, 1.01, -0.1):
+        response = client.post(endpoint, json={"version": "tuned", "confidence": value})
+        assert response.status_code == 422
+    response = client.post(endpoint, json={"version": "tuned", "confidence": 0.1})
+    assert response.status_code == 201
+    assert response.json()["confidence"] == 0.1
+    assert response.json()["id"] != source.id
+    assert client.post(endpoint, json={"version": "tuned", "confidence": 0.2}).status_code == 409
+    assert client.post("/api/v1/person-models/missing/threshold-versions",
+                       json={"version": "tuned", "confidence": 0.2}).status_code == 404
+
+
 def test_model_ingest_deletes_object_when_metadata_commit_fails(tmp_path: Path) -> None:
     class FailingRepository(InMemoryModelRepository):
         def put_artifact_and_version(

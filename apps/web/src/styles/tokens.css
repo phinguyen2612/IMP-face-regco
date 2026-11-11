@@ -19,9 +19,17 @@
   --video-bg: #13181f;
   --video-ink: #e7edf5;
   --overlay-shadow: 0 8px 32px #202b3b1a;
-  --radius-control: 6px;
-  --radius-panel: 10px;
-  --radius-dialog: 14px;
+  --radius-control: 8px;
+  --radius-panel: 14px;
+  --radius-dialog: 18px;
+  --surface-shadow: 0 2px 8px #202b3b04, 0 10px 28px #202b3b04;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --duration-press: 140ms;
+  --duration-enter: 200ms;
+  --login-glow-warm: #f5bc8c66;
+  --login-glow-cool: #99b9c638;
+  --login-grid: #b9b5ac25;
+  --login-shadow: 0 24px 64px #43301d0d, 0 2px 8px #43301d05;
   font-family: 'Segoe UI', ui-sans-serif, system-ui, sans-serif;
   color: var(--ink);
   background: var(--page-bg);
@@ -46,5 +54,10 @@
   --error-bg: #3b222a;
   --error-ink: #ffb3ba;
   --overlay-shadow: 0 8px 32px #0004;
+  --surface-shadow: 0 4px 16px #0002;
+  --login-glow-warm: #b45b2633;
+  --login-glow-cool: #568b9e26;
+  --login-grid: #a4b5c210;
+  --login-shadow: 0 24px 64px #0003, 0 2px 8px #0002;
   color-scheme: dark;
 }

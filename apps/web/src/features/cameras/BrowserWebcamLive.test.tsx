@@ -25,7 +25,27 @@ beforeEach(() => {
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({ drawImage: vi.fn() } as unknown as CanvasRenderingContext2D);
   vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation(cb => cb(new Blob(["jpeg"], { type: "image/jpeg" })));
 });
-afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.resetAllMocks(); });
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.resetAllMocks(); });
+
+it("explains a response timeout without claiming the frame never reached the server", async () => {
+  vi.useFakeTimers();
+  vi.mocked(api.sendBrowserFrame).mockImplementation((_id, _token, _frame, signal) =>
+    new Promise<void>((_resolve, reject) => {
+      signal.addEventListener("abort", () => reject(new DOMException("timeout", "AbortError")));
+    }));
+  render(<BrowserWebcamLive camera={camera} />);
+  const video = screen.getByLabelText("Webcam realtime Webcam") as HTMLVideoElement;
+  Object.defineProperty(video, "videoWidth", { value: 640, configurable: true });
+  Object.defineProperty(video, "videoHeight", { value: 480, configurable: true });
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Bắt đầu realtime" }));
+  });
+  expect(api.sendBrowserFrame).toHaveBeenCalledTimes(1);
+  await act(async () => { await vi.advanceTimersByTimeAsync(8000); });
+  expect(screen.getByRole("alert").textContent).toContain("Máy chủ chưa phản hồi");
+  expect(stop).toHaveBeenCalledTimes(1);
+  expect(api.stopBrowserSession).toHaveBeenCalledTimes(1);
+});
 
 it.each([
   ['NotFoundError', 'Không tìm thấy thiết bị camera.'],

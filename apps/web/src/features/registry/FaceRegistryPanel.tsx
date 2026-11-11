@@ -4,6 +4,7 @@ import {
   createPerson, listFaceImages, listPersons, uploadFaceImages,
   type FaceImagePublic, type ImageSource, type PersonPage, type PersonPublic, type UploadResult
 } from "../../api/registry";
+import { DataState } from "../../ui/DataState";
 import { ImageUpload } from "./ImageUpload";
 import { AdminFaceReviewQueue } from "./AdminFaceReviewQueue";
 
@@ -88,10 +89,10 @@ export function FaceRegistryPanel() {
           <input id="registry-search" type="search" value={search} maxLength={200}
             onChange={event => { setSearch(event.target.value); setOffset(0); }} />
           <button type="button" disabled={busy} onClick={() => select(null)}>Tạo hồ sơ mới</button>
-          {loading && <p role="status">Đang tải hồ sơ…</p>}
+          {loading && <DataState loading title="Đang tải hồ sơ…"/>}
           {error && <p role="alert" className="registry-error">{error}</p>}
           {error && <button onClick={() => setRevision(value => value + 1)}>Thử lại</button>}
-          {!loading && !error && page?.items.length === 0 && <p>Chưa có hồ sơ phù hợp.</p>}
+          {!loading && !error && page?.items.length === 0 && <DataState title="Chưa có hồ sơ phù hợp" description="Thử tìm tên khác hoặc tạo hồ sơ mới."/>}
           {!loading && !error && <ul className="person-list">
             {page?.items.map(person => <li key={person.id}>
               <button type="button" disabled={busy} aria-pressed={selected?.id === person.id}
@@ -124,10 +125,10 @@ export function FaceRegistryPanel() {
           </form>
           {selected && <div aria-label="Thư viện ảnh">
             <h4>Thư viện ảnh</h4>
-            {galleryLoading && <p role="status">Đang tải ảnh…</p>}
+            {galleryLoading && <DataState loading title="Đang tải ảnh…"/>}
             {galleryError && <p role="alert" className="registry-error">{galleryError}</p>}
             {galleryError && <button onClick={() => setRevision(value => value + 1)}>Tải lại ảnh</button>}
-            {!galleryLoading && !galleryError && images.length === 0 && <p>Chưa có ảnh.</p>}
+            {!galleryLoading && !galleryError && images.length === 0 && <DataState title="Hồ sơ chưa có ảnh" description="Tải ảnh hoặc chụp webcam để gửi duyệt."/>}
             <div className="face-gallery">
               {images.filter(image => image.person_id === selected.id).map(image => <figure key={image.id}>
                 <img src={image.content_url} alt={`Ảnh của ${selected.full_name}: ${image.original_filename}`} loading="lazy" />

@@ -11,6 +11,7 @@ import {
 import type { CameraCodec, CameraPublic, CameraSourceType, RuntimeStatus } from "../../api/contracts";
 import { CameraRecognition } from "./CameraRecognition";
 import {BrowserWebcamLive} from './BrowserWebcamLive';
+import {StatusBadge} from '../../ui/StatusBadge';
 import {cameraRuntimeLabel} from '../monitoring/MonitoringPage';
 
 interface CameraPanelProps {
@@ -311,7 +312,7 @@ export function CameraPanel({ runtimeStatuses }: CameraPanelProps) {
                   <h3>{camera.name}</h3>
                   <p>{camera.source_type === "webcam" ? "Webcam trình duyệt" :
                     camera.source_type === "local_webcam" ? `Webcam trực tiếp trên máy worker · Thiết bị ${camera.device_index ?? 0}` : camera.source_type === "droidcam" ? `DroidCam (Wi-Fi) · ${camera.rtsp_url ?? ''}` : camera.rtsp_url}</p>
-                  <p className="status-chip">{cameraRuntimeLabel(camera, runtime)}</p>
+                  <StatusBadge tone={cameraRuntimeLabel(camera, runtime)==="Đang nhận hình"?"success":"neutral"}>{cameraRuntimeLabel(camera, runtime)}</StatusBadge>
                   <p>{camera.lifecycle === 'ACTIVE' ? 'Đã gửi cấu hình' : 'Bản nháp chưa áp dụng'} · {runtime?.active_config_revision === camera.revision && camera.lifecycle === 'ACTIVE' ? 'Worker đã nhận phiên bản này' : 'Chưa có xác nhận phiên bản từ worker'}</p>
                   <p>{(camera.roi_polygon?.length ?? 0) >= 3 ? `ROI polygon · ${camera.roi_polygon?.length ?? 0} điểm` : "ROI: toàn khung hình"} ·
                     {(camera.attendance_enabled ?? true) ? " điểm danh bật" : " điểm danh tắt"} · giữ ảnh {camera.evidence_retention_days ?? 30} ngày</p>
@@ -350,7 +351,7 @@ export function CameraPanel({ runtimeStatuses }: CameraPanelProps) {
                       }
                     }}>Xóa camera</button>
                   </div>
-                  {camera.enabled && camera.lifecycle === 'ACTIVE' && <a className="camera-monitor-link" href="#monitoring" onClick={() => sessionStorage.setItem('monitor-camera', camera.id)}>Xem camera này trực tiếp →</a>}
+                  {camera.enabled && camera.lifecycle === 'ACTIVE' && <a className="camera-monitor-link" href="#monitoring" onClick={() => {try {sessionStorage.setItem('monitor-camera', camera.id);} catch { /* Navigation still works. */ }}}>Xem camera này trực tiếp →</a>}
                 </>
               )}
             </article>

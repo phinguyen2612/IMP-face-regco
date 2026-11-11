@@ -6,7 +6,8 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 const STORAGE_KEY = 'face-attendance-theme';
 
 function initialPreference(): { theme: Theme; saved: boolean } {
-  const saved = window.localStorage.getItem(STORAGE_KEY);
+  let saved: string | null = null;
+  try { saved = window.localStorage.getItem(STORAGE_KEY); } catch { /* Use the device theme when storage is blocked. */ }
   if (saved === 'light' || saved === 'dark') return { theme: saved, saved: true };
   return { theme: window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light', saved: false };
 }
@@ -16,7 +17,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const { theme, saved } = preference;
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    if (saved) window.localStorage.setItem(STORAGE_KEY, theme);
+    if (saved) { try { window.localStorage.setItem(STORAGE_KEY, theme); } catch { /* The current theme still works without persistence. */ } }
   }, [theme, saved]);
   useEffect(() => {
     if (saved || !window.matchMedia) return;

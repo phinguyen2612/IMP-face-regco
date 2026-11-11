@@ -1,6 +1,6 @@
 import {useEffect, useState, type FormEvent} from 'react';
 import {activateModelDeployment, assignModel, createModelDeployment} from '../../api/client';
-import {deactivatePersonDeployment, deletePersonModel, getPersonModels, updatePersonModel, uploadPersonModel, type PersonModels} from '../../api/personModels';
+import {createPersonThresholdVersion, deactivatePersonDeployment, deletePersonModel, getPersonModels, updatePersonModel, uploadPersonModel, type PersonModels} from '../../api/personModels';
 
 export function PersonModelsPanel() {
   const [models, setModels] = useState<PersonModels | null>(null);
@@ -90,13 +90,23 @@ export function PersonModelsPanel() {
       {editingId === model.id ? <form className="person-model-form" onSubmit={event => {
         event.preventDefault();
         void action(async () => {
-          await updatePersonModel(model.id, editVersion.trim(), model.deployments?.length ? undefined : editConfidence);
+          if (model.deployments?.length && editConfidence !== model.confidence) {
+            await createPersonThresholdVersion(model.id, editVersion.trim(), editConfidence);
+          } else {
+            await updatePersonModel(model.id, editVersion.trim(), editConfidence);
+          }
           setEditingId(null);
-        }, 'Đã lưu thông tin model.');
+        }, model.deployments?.length && editConfidence !== model.confidence
+          ? 'Đã tạo phiên bản ngưỡng mới từ model hiện có. Kích hoạt trên CPU, chờ worker kiểm tra rồi áp dụng lên camera.'
+          : 'Đã lưu thông tin model.');
       }}>
         <label>Tên phiên bản<input required maxLength={80} value={editVersion} disabled={busy} onChange={e => setEditVersion(e.target.value)}/></label>
-        <label>Ngưỡng phát hiện<input type="number" min={0.01} max={1} step={0.01} required value={editConfidence} disabled={busy || !!model.deployments?.length} onChange={e => setEditConfidence(Number(e.target.value))}/></label>
-        {!!model.deployments?.length && <p className="field-hint">Model đã được triển khai. Có thể đổi tên; để thay ngưỡng hoặc file ONNX, tải một phiên bản mới rồi kiểm tra trước khi áp dụng.</p>}
+        <label>Ngưỡng phát hiện<input type="number" min={0.01} max={1} step={0.01} required value={editConfidence} disabled={busy} onChange={e => {
+          setEditConfidence(Number(e.target.value));
+          if (model.deployments?.length && editVersion === model.version) setEditVersion(`${model.version.slice(0, 70)}-tuned`);
+        }}/></label>
+        <p className="field-hint">Giảm ngưỡng để lấy thêm phát hiện; tăng ngưỡng để lọc các phát hiện kém chắc chắn.</p>
+        {!!model.deployments?.length && <p className="field-hint">Đổi ngưỡng sẽ tạo phiên bản mới dùng lại file model hiện có. Đặt tên phiên bản riêng, kích hoạt rồi áp dụng lên camera để sử dụng ngưỡng mới.</p>}
         <button disabled={busy || !editVersion.trim()}>Lưu model</button><button type="button" disabled={busy} onClick={() => setEditingId(null)}>Hủy sửa</button>
       </form> : <div className="camera-actions">
         <button type="button" disabled={busy} onClick={() => {setEditingId(model.id); setEditVersion(model.version); setEditConfidence(model.confidence);}}>Sửa model</button>

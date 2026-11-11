@@ -11,6 +11,7 @@ from fr_contracts.messages import MessageEnvelope
 from fr_contracts.runtime_status import RuntimeStatus
 from psycopg import InterfaceError, OperationalError
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp, Receive, Scope, Send
 from starlette.websockets import WebSocketDisconnect
@@ -105,7 +106,7 @@ class BrowserAuthBoundary:
             )(scope, receive, send)
             return
         session_token = request.cookies.get(SESSION_COOKIE)
-        principal = self.auth.resolve_session(session_token)
+        principal = await run_in_threadpool(self.auth.resolve_session, session_token)
         if principal is None:
             await JSONResponse(status_code=401, content={"detail": "authentication required"})(
                 scope, receive, send
@@ -120,7 +121,7 @@ class BrowserAuthBoundary:
                 )(scope, receive, send)
                 return
             csrf = request.headers.get("x-csrf-token")
-            if not self.auth.verify_csrf(csrf, session_token):
+            if not await run_in_threadpool(self.auth.verify_csrf, csrf, session_token):
                 await JSONResponse(status_code=403, content={"detail": "CSRF validation failed"})(
                     scope, receive, send
                 )

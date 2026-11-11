@@ -12,6 +12,7 @@ from typing import Any, Literal
 from fr_domain.model_management import ModelManifest, ModelType
 
 from vision_worker.face_recognition.images import PersonCrop
+from vision_worker.inference.face_slicing import FaceSlicingConfig, slice_crop, translate_face
 from vision_worker.inference.interfaces import (
     BoundingBox,
     FaceDetection,
@@ -78,6 +79,10 @@ class ScrfdOnnxDetector:
                 raise ScrfdContractError("UNSUPPORTED_OUTPUT_CONTRACT")
         self._confidence = self._threshold(meta.get("confidence_threshold", 0.5))
         self._nms = self._threshold(meta.get("iou_threshold", 0.4))
+        try:
+            self._slicing = FaceSlicingConfig.from_metadata(meta.get("sliced_inference", {}))
+        except (TypeError, ValueError) as error:
+            raise ScrfdContractError("INVALID_FACE_SLICING_CONFIG") from error
         self._session = session
         self._np = import_module("numpy")
         self._image = import_module("PIL.Image")
@@ -187,6 +192,9 @@ class ScrfdOnnxDetector:
                         FaceLandmarks(*points),
                     )
                 )
+        return self._suppress(candidates)
+
+    def _suppress(self, candidates: Sequence[FaceDetection]) -> list[FaceDetection]:
         kept: list[FaceDetection] = []
         for face in sorted(candidates, key=lambda item: item.box.confidence, reverse=True):
             if all(_overlap(face.box, previous.box) <= self._nms for previous in kept):
@@ -203,28 +211,46 @@ class ScrfdOnnxDetector:
             failed_stage: Literal["preprocessing", "inference", "postprocessing"] | None = None
             stage: Literal["preprocessing", "inference", "postprocessing"] = "preprocessing"
             try:
-                pre = perf_counter()
-                try:
-                    if not isinstance(crop, PersonCrop):
-                        raise ScrfdContractError("INVALID_PERSON_ROI")
-                    tensor, scale = self.preprocess(crop)
-                finally:
-                    pre_ms = (perf_counter() - pre) * 1000
-                stage = "inference"
-                infer = perf_counter()
-                try:
-                    outputs = self._session.run({self._session.input_names[0]: tensor})
-                finally:
-                    infer_ms = (perf_counter() - infer) * 1000
-                stage = "postprocessing"
+                if not isinstance(crop, PersonCrop):
+                    raise ScrfdContractError("INVALID_PERSON_ROI")
+                windows = [(0, 0, crop.width, crop.height)]
+                windows.extend(self._slicing.windows(crop.width, crop.height))
+                candidates: list[FaceDetection] = []
+                for index, window in enumerate(windows):
+                    stage = "preprocessing"
+                    pre = perf_counter()
+                    try:
+                        view = crop if index == 0 else slice_crop(crop, window)
+                        tensor, scale = self.preprocess(view)
+                    finally:
+                        pre_ms = (pre_ms or 0) + (perf_counter() - pre) * 1000
+                    stage = "inference"
+                    infer = perf_counter()
+                    try:
+                        outputs = self._session.run({self._session.input_names[0]: tensor})
+                    finally:
+                        infer_ms = (infer_ms or 0) + (perf_counter() - infer) * 1000
+                    stage = "postprocessing"
+                    post = perf_counter()
+                    try:
+                        faces = self.postprocess(outputs, view.width, view.height, scale)
+                        candidates.extend(
+                            translate_face(face, window[0], window[1]) for face in faces
+                        )
+                        # Bound cross-tile NMS storage and work, retaining the best scores.
+                        candidates = sorted(
+                            candidates, key=lambda face: face.box.confidence, reverse=True,
+                        )[:900]
+                    finally:
+                        post_ms = (post_ms or 0) + (perf_counter() - post) * 1000
                 post = perf_counter()
                 try:
-                    faces = self.postprocess(outputs, crop.width, crop.height, scale)
+                    faces = self._suppress(candidates) if len(windows) > 1 else candidates
                     results.append(faces)
                     self.successes += 1
                     self.no_face_count += int(not faces)
                 finally:
-                    post_ms = (perf_counter() - post) * 1000
+                    post_ms = (post_ms or 0) + (perf_counter() - post) * 1000
             except Exception:
                 self.failures += 1
                 failed_stage = stage

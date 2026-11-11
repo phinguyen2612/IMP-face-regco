@@ -64,9 +64,11 @@ def create_browser_stream_router(
         request: Request,
         x_webcam_token: Annotated[str, Header()],
     ) -> dict[str, object]:
-        camera = require(camera_id)
+        camera = await run_in_threadpool(require, camera_id)
         try:
-            streams.authorize(camera_id, camera.revision, x_webcam_token)
+            # Both checks can resolve the current camera revision through PostgreSQL.
+            # Keep the event loop available to receive this and other upload bodies.
+            await run_in_threadpool(streams.authorize, camera_id, camera.revision, x_webcam_token)
             payload = bytearray()
             async for chunk in request.stream():
                 if len(payload) + len(chunk) > MAX_FRAME_BYTES:

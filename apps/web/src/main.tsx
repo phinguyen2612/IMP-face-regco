@@ -6,6 +6,7 @@ import "./styles.css";
 import "./styles/tokens.css";
 import "./styles/product.css";
 import "./styles/workspace.css";
+import "./features/auth/login.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
